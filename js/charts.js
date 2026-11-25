@@ -142,13 +142,14 @@ function columnChart(host, { cats, labels, titles, series, stacked = false, pola
 /* Lines over time (2px, round joins), 8px end dots with a 2px surface ring, a crosshair that snaps
    to the nearest point and one tooltip with every series. End values are labeled only when they do
    not collide; otherwise the legend and the tooltip carry them. */
-function lineChart(host, { labels, titles, series, height = 230, fmt = money }) {
+function lineChart(host, { labels, titles, series, height = 230, fmt = money, ref = null, vlines = [] }) {
   host.classList.add('ch-host');
   const n = labels.length;
-  const W = Math.max(300, host.clientWidth), padL = 62, padR = 84, padT = 14, axisH = 26;
+  const W = Math.max(300, host.clientWidth), padL = 62, padR = 84, padT = vlines.length ? 30 : 14, axisH = 26;
   const plotW = W - padL - padR, H = padT + height + axisH;
   let max = 0, min = 0;
   for (const s of series) for (const v of s.values) if (isNum(v)) { max = Math.max(max, v); min = Math.min(min, v); }
+  if (ref && isNum(ref.value)) max = Math.max(max, ref.value);
   const { lo, hi, ticks } = niceTicks(min, max);
   const x = i => padL + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
   const y = v => padT + (hi - v) / (hi - lo || 1) * height;
@@ -164,6 +165,15 @@ function lineChart(host, { labels, titles, series, height = 230, fmt = money }) 
     if (i !== n - 1 && n - 1 - i < every / 2) return;          // keep the last label clear of its neighbor
     const t = svgEl('text', { x: x(i), y: padT + height + 17, 'text-anchor': 'middle', class: 'ch-tick' }); t.textContent = l; svg.appendChild(t);
   });
+  if (ref && isNum(ref.value)) {                              // a goal: solid hairline in ink, labeled
+    svg.appendChild(svgEl('line', { x1: padL, x2: padL + plotW, y1: y(ref.value), y2: y(ref.value), class: 'ch-ref' }));
+    const t = svgEl('text', { x: padL + 6, y: y(ref.value) - 6, class: 'ch-reflab' }); t.textContent = `${ref.label} ${compactMoney(ref.value)}`; svg.appendChild(t);
+  }
+  for (const v of vlines) {                                   // markers such as "retire here"
+    if (v.i < 0 || v.i >= n) continue;
+    svg.appendChild(svgEl('line', { x1: x(v.i), x2: x(v.i), y1: padT - 4, y2: padT + height, class: 'ch-vline' }));
+    const t = svgEl('text', { x: x(v.i), y: padT - 9, 'text-anchor': 'middle', class: 'ch-reflab' }); t.textContent = v.label; svg.appendChild(t);
+  }
   const cross = svgEl('line', { y1: padT, y2: padT + height, class: 'ch-cross', visibility: 'hidden' });
   svg.appendChild(cross);
   const dots = [];

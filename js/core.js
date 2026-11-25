@@ -157,14 +157,16 @@ const SOURCES = { payroll: 'מהמשכורת', bank: 'מחשבון הבנק' };
 
 /* Estimated yearly return (%, before inflation, after management fees). General long-term
    assumptions for forecasts, not advice; every account can override them.
-   Real estate has two estimates because the past and the present differ so much:
-   by the past ~6% (Bank of Israel: 2006–2018 average 6.3% nominal, 5.3% real) and by the present ~0%
-   (CBS home price index: −1.8% year on year in Jul–Aug 2026, −0.9% in 2025). Default: 3%, between them. */
-const RE_PAST = 6, RE_NOW = 0;
+   Real estate has two long-run estimates (one year says little):
+   • 20 years: Israeli home prices 2006-Q2 → 2026-Q2 rose 6.0% a year nominal, 4.1% real (BIS residential
+     property price series for Israel, which follows the CBS index).
+   • Long run: real home prices have risen ~2.9% a year since 1960 (Bank of Israel, Yakhin & Gamrasni 2021).
+   Nominal estimate = real rate + 2.5% expected inflation → 6.7% and 5.5%. Default: the long run. */
+const RE_20Y = 6.7, RE_LONG = 5.5;
 const RETURN_PRESETS = [
   ['S&P 500', 8], ['מדד עולמי (MSCI World)', 7], ['מניות ישראל (ת״א 125)', 7], ['מסלול מנייתי', 7],
   ['מסלול תלוי גיל', 6], ['מסלול כללי', 5], ['אג״ח / מסלול אג״ח', 3.5], ['קרן כספית / פיקדון', 3.5],
-  ['זהב', 4], ['נדל״ן לפי העבר', RE_PAST], ['נדל״ן באמצע', 3], ['נדל״ן לפי המצב היום', RE_NOW], ['עו״ש / מזומן', 0],
+  ['זהב', 4], ['נדל״ן לפי 20 שנה', RE_20Y], ['נדל״ן לטווח ארוך (מ-1960)', RE_LONG], ['עו״ש / מזומן', 0],
 ];
 /* The default estimate for an account, from its track name, sub-type and type. null = no sensible default (e.g. crypto). */
 function suggestReturn(a) {
@@ -179,7 +181,7 @@ function suggestReturn(a) {
     case 'broker': return 7;
     case 'deposit': return isNum(a.rate) ? a.rate : 3.5;
     case 'cash': return 0;
-    case 'realestate': return 3;
+    case 'realestate': return RE_LONG;
     case 'other': return { 'קרן כספית': 3.5, 'זהב': 4, 'מט״ח': 0, 'מניות / אופציות מהעבודה (RSU)': 8 }[a.sub] ?? null;
   }
   return null;

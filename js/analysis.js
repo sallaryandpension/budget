@@ -18,7 +18,7 @@ function monthDeposits(m, source) {
 /* Total balance of each investment type at the end of month m (last known balance carried forward). */
 function typeBalances(m) {
   const out = {};
-  for (const a of data.invest.accs) { const b = lastBal(a.id, m); if (b) out[a.type] = (out[a.type] || 0) + b.v; }
+  for (const a of data.invest.accs) { if (!isIncluded(a)) continue; const b = lastBal(a.id, m); if (b) out[a.type] = (out[a.type] || 0) + b.v; }
   return out;
 }
 
@@ -51,7 +51,7 @@ function renderAnalysis() {
   const nwEnd = last ? sum(Object.values(typeBalances(last))) : 0;
   const nwStartObj = before ? typeBalances(before) : {}, hasStart = Object.keys(nwStartObj).length > 0;
   const nwStart = sum(Object.values(nwStartObj));
-  const gains = sortedAccs().filter(tracksGain).map(a => ({ a, g: periodGain(a.id, ms) })).filter(x => x.g);
+  const gains = sortedAccs().filter(a => tracksGain(a) && isIncluded(a)).map(a => ({ a, g: periodGain(a.id, ms) })).filter(x => x.g);
   const gainSum = sum(gains.map(x => x.g.gain));
   const range = ms.length ? `${monthName(ms[0])} – ${monthName(last)}` : '';
 
@@ -61,6 +61,7 @@ function renderAnalysis() {
       <div class="tools"><select id="anPeriod" aria-label="תקופה">${opts.map(([v, t]) => `<option value="${v}" ${v === ui.anPeriod ? 'selected' : ''}>${t}</option>`).join('')}</select>
       <label class="chk"><input type="checkbox" id="anSkip" ${ui.anSkipCur ? 'checked' : ''}> בלי החודש הנוכחי</label></div></div>
     <p class="muted range">${range}</p>
+    ${inclFilterHtml('anIncl')}
     <div class="kpis">
       ${tile('שיעור חיסכון ממוצע', isNum(saveRate) ? `<span class="n">${PF1.format(saveRate)}%</span>` : '—', 'מההכנסה נשאר אחרי ההוצאות')}
       ${tile('נשאר בחשבון בחודש ממוצע', isNum(left) ? moneyHtml(left) : '—', 'הכנסות פחות הוצאות ופחות השקעות מהבנק')}
@@ -81,6 +82,7 @@ function renderAnalysis() {
     <p class="hint">הגרפים מציגים את הנתונים שהוזנו. רחפו (או עברו עם Tab) על חודש כדי לראות את כל הערכים שלו, ופתחו ״הצגה כטבלה״ לכל המספרים.</p>`;
   $('#anPeriod').onchange = e => { ui.anPeriod = e.target.value; saveUi(); renderAnalysis(); };
   $('#anSkip').onchange = e => { ui.anSkipCur = e.target.checked; saveUi(); renderAnalysis(); };
+  bindInclFilter('anIncl', renderAnalysis);
 
   const noData = (id, text) => { $(id).innerHTML = `<div class="empty">${text}</div>`; };
 
@@ -129,7 +131,7 @@ function renderAnalysis() {
   // 7. asset value over time, stacked by type (fixed color per type). Real estate is left out of the
   //    chart (one apartment would dwarf everything else) and shown as a line of text instead.
   const withBal = t => data.invest.accs.some(a => a.type === t && Object.values(data.invest.vals).some(r => isNum(r[a.id]?.b)));
-  const types = INV_ORDER.filter(t => t !== 'realestate' && withBal(t));
+  const types = INV_ORDER.filter(t => t !== 'realestate' && withBal(t) && (accGroup({ type: t }) === 'other' || inclGroups()[t]));
   const reNow = last ? typeBalances(last).realestate : null;
   if (types.length) {
     const bal = ms.map(m => typeBalances(m));

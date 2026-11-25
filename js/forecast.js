@@ -1,23 +1,62 @@
 "use strict";
 /* =====================================================================
-   forecast.js: how much there will be in N years.
-   Scenario A: keep depositing like the last 12 months (deposits rise with inflation).
-   Scenario B: no new deposits, only the estimated return.
-   Per account, month by month:  B(t) = B(t-1) × (1 + r_m) + D × (1 + i_m)^t × (1 − deposit fee)
-     r_m = monthly rate of the estimated yearly return (before inflation, after balance fees),
-     i_m = monthly inflation. "Today's shekels" divides by (1 + inflation)^years.
+   forecast.js: how much there will be, and when one can stop working.
+   Mode 1 (by years):
+     • years: the value in N years, keeping deposits (A) vs no new deposits (B).
+     • goal:  how many years until a target, counting all money, and counting pension/annuity money
+              only from the pension age (before that it cannot be drawn).
+   Mode 2 (fire): with a withdrawal rule (e.g. 4%) and a monthly spending, the earliest age to stop
+     working: liquid savings must carry the person until the pension starts, and from then on the
+     annuity plus the rule must cover the spending. Always in today's shekels.
+   Per account, month by month:  B(t) = B(t-1) × (1 + r_m) + D × (1 + i_m)^t × (1 − deposit fee).
+   Filters: include real estate / pension funds / provident funds (ui.incl, shared with analysis).
    Settings live in data.settings.forecast, so every device sees the same forecast.
-   No tax on withdrawal is applied. This is an estimate, not advice.
+   No tax is applied. This is an estimate for planning, not advice.
    ===================================================================== */
 
-const FC_DEFAULTS = { years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {} };
-const fcSettings = () => Object.assign({}, FC_DEFAULTS, data.settings.forecast || {}, { dep: Object.assign({}, (data.settings.forecast || {}).dep) });
+const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all' };
+/* Which deposits go on: those from the salary depend on the employer (pension, study fund), the
+   personal ones depend on the person (broker, bank). Each account says where its deposits come from. */
+const SCEN = { all: 'הכול ממשיך', payroll: 'רק הפקדות מהמשכורת', personal: 'רק הפקדות אישיות', none: 'בלי הפקדות' };
+const SCEN_HINT = { all: '', payroll: 'פנסיה, השתלמות וכל מה שיורד מהמשכורת', personal: 'ברוקר, פיקדונות וכל מה שיוצא מחשבון הבנק', none: 'רק התשואה על מה שיש היום' };
+const depOn = (a, s) => s === 'all' || (s === 'payroll' && a.source === 'payroll') || (s === 'personal' && a.source !== 'payroll');
+const yv = (x, y, s) => (depOn(x.a, s) ? x.A : x.B).yearly[y];      // an account's value in year y under scenario s
+const fcSettings = () => { const f = data.settings.forecast || {}; return Object.assign({}, FC_DEFAULTS, f, { dep: Object.assign({}, f.dep) }); };
 function saveFc(patch) { change({ t: 'set', k: 'forecast', v: Object.assign(fcSettings(), patch) }, { render: false }); renderForecast(); }
+const inclGroups = () => Object.assign({ realestate: true, pension: true, gemel: true }, ui.incl || {});
+const accGroup = a => a.type === 'realestate' || a.type === 'pension' || a.type === 'gemel' ? a.type : 'other';
+const isIncluded = a => { const g = accGroup(a); return g === 'other' || inclGroups()[g]; };
+/* Money paid out only as a monthly pension (annuity): pension funds and provident funds for pension. */
+const isAnnuity = a => a.type === 'pension' || (a.type === 'gemel' && a.sub === 'גמל לתגמולים ופיצויים');
+const realRate = (a, infl) => (1 + (accReturn(a) ?? 0) / 100) / (1 + infl / 100) - 1;
+/* A home you live in cannot pay for retirement (you still need somewhere to live). */
+const isHome = a => a.type === 'realestate' && a.sub === 'דירה למגורים';
+
+function inclFilterHtml(id) {
+  const inc = inclGroups();
+  return `<div class="incl" id="${id}"><span class="muted">לכלול:</span>
+    <label class="chk"><input type="checkbox" data-g="realestate" ${inc.realestate ? 'checked' : ''}> נדל״ן</label>
+    <label class="chk"><input type="checkbox" data-g="pension" ${inc.pension ? 'checked' : ''}> קרנות פנסיה</label>
+    <label class="chk"><input type="checkbox" data-g="gemel" ${inc.gemel ? 'checked' : ''}> קופות גמל</label></div>`;
+}
+function bindInclFilter(id, rerender) {
+  $(`#${id}`).addEventListener('change', e => {
+    const g = e.target.dataset.g; if (!g) return;
+    ui.incl = Object.assign(inclGroups(), { [g]: e.target.checked }); saveUi(); rerender();
+  });
+}
 
 /* Average monthly deposit of an account over the last 12 months that have deposit data. */
 function avgDeposit12(a) {
   const cur = curMonth(), ms = monthRange(shiftMonth(cur, -11), cur).filter(invDepMonth);
   return ms.length ? sum(ms.map(m => invCell(m, a.id)?.d)) / ms.length : 0;
+}
+/* Average monthly expenses over the last 12 full months (the current month is still open). */
+function avgSpend12() {
+  const cur = curMonth();
+  let ms = monthRange(shiftMonth(cur, -12), shiftMonth(cur, -1)).filter(m => monthHasData('expenses', m));
+  if (!ms.length) ms = monthRange(shiftMonth(cur, -11), cur).filter(m => monthHasData('expenses', m));
+  return ms.length ? sum(ms.map(m => monthTotal('expenses', m))) / ms.length : 0;
 }
 function projectAccount(a, start, dep, years, infl, withDeposits, rateOverride) {
   const r = isNum(rateOverride) ? rateOverride : accReturn(a), rm = Math.pow(1 + (isNum(r) ? r : 0) / 100, 1 / 12) - 1;
@@ -31,115 +70,272 @@ function projectAccount(a, start, dep, years, infl, withDeposits, rateOverride) 
   }
   return { yearly, paidYearly };
 }
+function fcRows(S, years) {
+  return sortedAccs().filter(a => a.active !== false && isIncluded(a)).map(a => {
+    const lb = lastBal(a.id, curMonth()), start = lb ? lb.v : 0;
+    const avgD = avgDeposit12(a), dep = isNum(S.dep[a.id]) ? S.dep[a.id] : avgD;
+    return { a, start, hasBal: !!lb, avgD, dep, ret: accReturn(a),
+      A: projectAccount(a, start, dep, years, S.infl, true), B: projectAccount(a, start, dep, years, S.infl, false) };
+  }).filter(x => x.hasBal || x.dep > 0);
+}
+
+/* Mode 2: stop working k years from now. Real terms (today's shekels), yearly steps.
+   Liquid money pays the spending until the pension age; there the annuity money becomes a monthly
+   pension (balance ÷ coefficient). Rule check at the pension age: liquid × rate ≥ what the pension
+   does not cover. The simulation goes on to 95 to show whether the money actually lasts. */
+function firePlan(rows, S, age, H, k) {
+  const dR = y => Math.pow(1 + S.infl / 100, y);
+  const liq = rows.filter(x => !isAnnuity(x.a) && !isHome(x.a)), ann = rows.filter(x => isAnnuity(x.a));
+  const annual = 12 * S.spendNow, P = S.retAge, swr = S.swr / 100, sc = S.depScen;
+  let L = sum(liq.map(x => yv(x, k, sc))) / dR(k);
+  const Lret = L;
+  const rl = L > 0 ? sum(liq.map(x => yv(x, k, sc) / dR(k) * realRate(x.a, S.infl))) / L : 0;
+  let pen = ann.map(x => yv(x, k, sc) / dR(k));
+  let annuity = 0, converted = false, LatP = null, bridgeOk = true, runOut = null;
+  const path = [];
+  for (let y = k; y <= H; y++) {
+    const ageY = age + y;
+    if (!converted && ageY >= P) { annuity = sum(pen) / S.coef; pen = pen.map(() => 0); converted = true; LatP = L; }
+    path.push({ y, L, pen: sum(pen) });
+    L = L * (1 + rl) - (annual - 12 * annuity);
+    pen = pen.map((p, i) => p * (1 + realRate(ann[i].a, S.infl)));
+    if (L < 0 && runOut === null) { runOut = ageY + 1; if (!converted) bridgeOk = false; }
+  }
+  if (LatP === null) LatP = L;
+  const needAfter = Math.max(0, annual - 12 * annuity);
+  const ruleOk = bridgeOk && LatP >= 0 && (needAfter === 0 || LatP * swr >= needAfter);
+  return { k, age: age + k, Lret, rl, annuity, LatP, needAfter, bridgeOk, ruleOk, runOut, path };
+}
 
 function renderForecast() {
   const el = $('#view-forecast');
-  const accs = sortedAccs().filter(a => a.active !== false);
-  if (!accs.length) {
+  if (!sortedAccs().some(a => a.active !== false)) {
     el.innerHTML = `<div class="pagehead"><h2>🔮 תחזית</h2></div><div class="card empty">כדי לחשב תחזית צריך חשבונות השקעה עם יתרות. מתחילים ב-<a href="#invest">📈 השקעות</a>.</div>`;
     return;
   }
   const S = fcSettings(), nowY = +curMonth().slice(0, 4);
   const age = isNum(S.birth) ? nowY - S.birth : null;
   const toRet = isNum(age) ? Math.max(1, S.retAge - age) : null;
-  const years = S.years === 'ret' ? (toRet || 20) : S.years;
-  const defl = y => S.real ? Math.pow(1 + S.infl / 100, y) : 1;     // today's shekels or nominal
-
-  const rows = accs.map(a => {
-    const lb = lastBal(a.id, curMonth()), start = lb ? lb.v : 0;
-    const avgD = avgDeposit12(a), dep = isNum(S.dep[a.id]) ? S.dep[a.id] : avgD;
-    const A = projectAccount(a, start, dep, years, S.infl, true), B = projectAccount(a, start, dep, years, S.infl, false);
-    return { a, start, hasBal: !!lb, avgD, dep, ret: accReturn(a), A, B };
-  }).filter(x => x.hasBal || x.dep > 0);
-  const missingBal = rows.filter(x => !x.hasBal), missingRet = rows.filter(x => !isNum(x.ret));
-  const tot = (key, y) => sum(rows.map(x => x[key].yearly[y])) / defl(y);
-  const today = sum(rows.map(x => x.start));
-  const endA = tot('A', years), endB = tot('B', years);
-  const depNow = sum(rows.map(x => x.dep));
-  const yearLabels = Array.from({ length: years + 1 }, (_, y) => String(nowY + y));
-  const yearTitles = yearLabels.map((l, y) => y === 0 ? `היום (${l})` : `${l} · בעוד ${y} ${y === 1 ? 'שנה' : 'שנים'}${isNum(age) ? ` · גיל ${age + y}` : ''}`);
-  // first year each scenario crosses the next round million
-  const nextMil = Math.floor(today / 1e6) + 1, milY = Array.from({ length: years + 1 }, (_, y) => y).find(y => tot('A', y) >= nextMil * 1e6);
-  const pensionRows = rows.filter(x => x.a.type === 'pension' || (x.a.type === 'gemel' && x.a.sub === 'גמל לתגמולים ופיצויים'));
-  const pensionAtRet = isNum(toRet) && toRet <= years ? sum(pensionRows.map(x => x.A.yearly[toRet])) / defl(toRet) : null;
+  const mode = S.mode, sc = SCEN[S.depScen] ? S.depScen : 'all';
+  S.depScen = sc;
+  const real = mode === 'fire' ? true : S.real;
+  const defl = y => real ? Math.pow(1 + S.infl / 100, y) : 1;
+  const ageTxt = y => isNum(age) ? ` · גיל ${age + y}` : '';
   const yOpts = [5, 10, 15, 20, 25, 30];
-  // Real estate: two estimates side by side (by the past / by the present), plus what is set now.
-  const reRows = rows.filter(x => x.a.type === 'realestate');
-  const reAt = rate => sum(reRows.map(x => projectAccount(x.a, x.start, x.dep, years, S.infl, true, rate).yearly[years])) / defl(years);
-  const reSet = sum(reRows.map(x => x.A.yearly[years])) / defl(years);
-  const reRates = [...new Set(reRows.map(x => accReturn(x.a)))];
-  const reBox = reRows.length ? (() => {
-    const cell = (label, v) => `<div><span>${label}</span><b class="n">${money(v)}</b><small>סה״כ כל החשבונות: ${money(endA - reSet + v)}</small></div>`;
-    return `<section class="card re2"><h3>🏠 שתי הערכות לנדל״ן <small class="muted">בעוד ${years} שנים${S.real ? ', בשקלים של היום' : ''}</small></h3>
-      <div class="re2-grid">${cell(`לפי העבר (${RE_PAST}% בשנה)`, reAt(RE_PAST))}${cell(`לפי המצב היום (${RE_NOW}% בשנה)`, reAt(RE_NOW))}
-        ${cell(`מה שמוגדר עכשיו${reRates.length === 1 && isNum(reRates[0]) ? ` (${pct(reRates[0])})` : ''}`, reSet)}</div>
-      <p class="hint">היום הנדל״ן שווה ${money(sum(reRows.map(x => x.start)))}. <b>העבר:</b> בין 2006 ל-2018 מחירי הדירות עלו בממוצע 6.3% בשנה (5.3% מעל האינפלציה), לפי בנק ישראל. <b>היום:</b> מדד מחירי הדירות של הלמ״ס ירד ב-1.8% בשנה עד יולי–אוגוסט 2026, ו-2025 הסתיימה בירידה של כ-0.9%. ״סה״כ כל החשבונות״ הוא התרחיש שבו ממשיכים להפקיד.</p></section>`;
-  })() : '';
+  const avgSpend = avgSpend12();
+  S.spendNow = isNum(S.spend) ? S.spend : avgSpend;
 
+  const H = mode === 'years' ? (S.years === 'ret' ? (toRet || 20) : S.years)
+    : mode === 'goal' ? 60 : (isNum(age) ? Math.max(1, 95 - age) : 1);
+  const rows = fcRows(S, H);
+  const missingBal = rows.filter(x => !x.hasBal), missingRet = rows.filter(x => !isNum(x.ret));
+  const today = sum(rows.map(x => x.start));
+  const depPay = sum(rows.filter(x => x.a.source === 'payroll').map(x => x.dep)), depOwn = sum(rows.filter(x => x.a.source !== 'payroll').map(x => x.dep));
+  const depScenSeg = `<div class="fc-scen"><span class="muted">הפקדות מעכשיו:</span><div class="seg wrap" id="fcScen">${Object.entries(SCEN).map(([k, t]) =>
+    `<button type="button" data-s="${k}" class="${k === sc ? 'on' : ''}" title="${esc(SCEN_HINT[k])}">${t}${k === 'payroll' ? ` (${money(depPay)})` : k === 'personal' ? ` (${money(depOwn)})` : ''}</button>`).join('')}</div>
+    <small class="muted">לפי השדה ״מאיפה מגיעות ההפקדות״ בכל חשבון: מהמשכורת ${money(depPay)} לחודש (תלוי במעסיק), מחשבון הבנק ${money(depOwn)} לחודש (תלוי בך).</small></div>`;
+  const excluded = ['realestate', 'pension', 'gemel'].filter(g => !inclGroups()[g]).map(g => ({ realestate: 'נדל״ן', pension: 'קרנות פנסיה', gemel: 'קופות גמל' }[g]));
+
+  // ---------- controls ----------
+  const modeSeg = `<div class="seg fc-mode" id="fcMode">
+      <button type="button" data-m="years" class="${mode !== 'fire' ? 'on' : ''}">מצב 1: לפי שנים</button>
+      <button type="button" data-m="fire" class="${mode === 'fire' ? 'on' : ''}">מצב 2: מתי אפשר לפרוש</button></div>
+    ${mode !== 'fire' ? `<div class="seg fc-sub" id="fcSub">
+      <button type="button" data-m="years" class="${mode === 'years' ? 'on' : ''}">כמה יהיה בעוד X שנים</button>
+      <button type="button" data-m="goal" class="${mode === 'goal' ? 'on' : ''}">תוך כמה זמן אגיע ליעד</button></div>` : ''}`;
+  const fInfl = `<div><label for="fcInfl">אינפלציה שנתית</label><div class="unit"><input id="fcInfl" type="text" inputmode="decimal" value="${S.infl}"><span>%</span></div></div>`;
+  const fReal = `<div><label>להציג</label><div class="seg" id="fcReal"><button type="button" data-r="1" class="${S.real ? 'on' : ''}">בשקלים של היום</button><button type="button" data-r="0" class="${S.real ? '' : 'on'}">בשקלים של אז</button></div></div>`;
+  const fBirth = `<div><label for="fcBirth">שנת לידה ${mode === 'fire' ? '' : '<small class="muted">(לא חובה)</small>'}</label><input id="fcBirth" type="text" inputmode="numeric" maxlength="4" value="${isNum(S.birth) ? S.birth : ''}" placeholder="למשל 1988"></div>`;
+  const fRet = `<div><label for="fcRet">גיל קבלת הפנסיה</label><input id="fcRet" type="text" inputmode="numeric" maxlength="2" value="${S.retAge}"></div>`;
+  let fields = '';
+  if (mode === 'years') fields = `<div><label for="fcYears">כמה שנים קדימה</label><select id="fcYears">${yOpts.map(v => `<option value="${v}" ${S.years === v ? 'selected' : ''}>${v} שנים</option>`).join('')}
+      <option value="ret" ${S.years === 'ret' ? 'selected' : ''} ${isNum(age) ? '' : 'disabled'}>עד גיל ${S.retAge}${isNum(toRet) ? ` (${toRet} שנים)` : ' (צריך שנת לידה)'}</option></select></div>${fInfl}${fReal}${fBirth}${fRet}`;
+  else if (mode === 'goal') fields = `<div><label for="fcGoal">היעד</label><div class="unit"><input id="fcGoal" type="text" inputmode="decimal" value="${cellText(S.goal)}"><span>₪</span></div></div>${fInfl}${fReal}${fBirth}${fRet}`;
+  else fields = `<div><label for="fcSpend">הוצאה חודשית בפרישה</label><div class="unit"><input id="fcSpend" type="text" inputmode="decimal" value="${isNum(S.spend) ? cellText(S.spend) : ''}" placeholder="${NF0.format(Math.round(avgSpend))}"><span>₪</span></div>
+      <small class="muted">${isNum(S.spend) ? `ממוצע ההוצאות: ${money(avgSpend)}` : 'ריק = ממוצע ההוצאות ב-12 החודשים האחרונים'}</small></div>
+    <div><label for="fcSwr">כלל משיכה</label><select id="fcSwr">${[3, 3.5, 4, 4.5, 5].map(v => `<option value="${v}" ${S.swr === v ? 'selected' : ''}>חוק ה-${PF1.format(v)}%</option>`).join('')}</select></div>
+    ${fBirth}${fRet}${fInfl}`;
+
+  let body = '';
+  // ---------- mode 1a: value in N years ----------
+  if (mode === 'years') {
+    const years = H;
+    const tot = (s, y, filter = () => true) => sum(rows.filter(filter).map(x => yv(x, y, s))) / defl(y);
+    const endA = tot(sc, years), endB = tot('none', years), annA = tot(sc, years, x => isAnnuity(x.a));
+    const depNow = sum(rows.filter(x => depOn(x.a, sc)).map(x => x.dep));
+    const nextMil = Math.floor(today / 1e6) + 1;
+    const milY = Array.from({ length: years + 1 }, (_, y) => y).find(y => tot(sc, y) >= nextMil * 1e6);
+    const pensionRows = rows.filter(x => isAnnuity(x.a));
+    const pensionAtRet = isNum(toRet) && toRet <= years ? sum(pensionRows.map(x => yv(x, toRet, sc))) / defl(toRet) : null;
+    const reRows = rows.filter(x => x.a.type === 'realestate');
+    const reAt = rate => sum(reRows.map(x => projectAccount(x.a, x.start, x.dep, years, S.infl, depOn(x.a, sc), rate).yearly[years])) / defl(years);
+    const reSet = sum(reRows.map(x => yv(x, years, sc))) / defl(years);
+    const reRates = [...new Set(reRows.map(x => accReturn(x.a)))];
+    body = `
+      <div class="kpis">
+        <div class="kpi an"><div class="k-l">היום</div><div class="k-v">${moneyHtml(today)}</div><div class="k-s">${rows.length} חשבונות</div></div>
+        <div class="kpi fa"><div class="k-l">בעוד ${years} שנים · ${SCEN[sc]}</div><div class="k-v">${moneyHtml(endA)}</div><div class="k-s">${annA ? `מזה בפנסיה ובגמל לקצבה ${money(annA)}, נזיל רק מגיל ${S.retAge}` : `הפקדה של ${money(depNow)} לחודש, שעולה עם האינפלציה`}</div></div>
+        <div class="kpi fb"><div class="k-l">בעוד ${years} שנים, בלי הפקדות בכלל</div><div class="k-v">${moneyHtml(endB)}</div><div class="k-s">רק התשואה על מה שיש היום</div></div>
+        <div class="kpi an"><div class="k-l">מה ההפקדות מוסיפות</div><div class="k-v">${moneyHtml(endA - endB)}</div><div class="k-s">הפקדה של ${money(depNow)} לחודש</div></div>
+      </div>
+      <p class="muted fc-note">${real ? `הסכומים <b>בשקלים של היום</b> (אחרי ניכוי אינפלציה של ${PF1.format(S.infl)}% בשנה).` : `הסכומים <b>בשקלים של אז</b> (נומינלי).`}
+        ${isNum(milY) && milY > 0 ? ` אם ממשיכים להפקיד, השווי יעבור את <b>${money(nextMil * 1e6)}</b> בשנת <b>${nowY + milY}</b>.` : ''}</p>
+      ${reRows.length ? `<section class="card re2"><h3>🏠 שתי הערכות לנדל״ן <small class="muted">בעוד ${years} שנים${real ? ', בשקלים של היום' : ''}</small></h3>
+        <div class="re2-grid">${[[`לפי 20 השנים האחרונות (${PF1.format(RE_20Y)}% בשנה)`, reAt(RE_20Y)], [`לפי הטווח הארוך, מ-1960 (${PF1.format(RE_LONG)}% בשנה)`, reAt(RE_LONG)],
+          [`מה שמוגדר עכשיו${reRates.length === 1 && isNum(reRates[0]) ? ` (${pct(reRates[0])})` : ''}`, reSet]].map(([l, v]) =>
+          `<div><span>${l}</span><b class="n">${money(v)}</b><small>סה״כ כל החשבונות: ${money(endA - reSet + v)}</small></div>`).join('')}</div>
+        <p class="hint">היום הנדל״ן שווה ${money(sum(reRows.map(x => x.start)))}. <b>20 שנה:</b> בין 2006 ל-2026 מחירי הדירות עלו בממוצע 6.0% בשנה, 4.1% מעל האינפלציה (סדרת מחירי הדיור של BIS לישראל, לפי מדד הלמ״ס). <b>טווח ארוך:</b> מאז 1960 המחיר הריאלי עלה בכ-2.9% בשנה (בנק ישראל, יכין וגמרסני 2021). לשיעור הריאלי נוספה אינפלציה צפויה של 2.5%. בטווח של 10 שנים העלייה הייתה 4.3% בשנה (2.3% ריאלי).</p></section>` : ''}
+      <section class="card"><h3>השווי הכולל לאורך השנים <small class="muted">כל תרחישי ההפקדה</small></h3><div id="fcLine" class="ch"></div><div id="fcLineX"></div></section>
+      <section class="card"><h3>ממה זה מורכב <small class="muted">${SCEN[sc]}, לפי סוג</small></h3><div id="fcStack" class="ch"></div><div id="fcStackX"></div></section>
+      ${isNum(pensionAtRet) && pensionRows.length ? `<section class="card"><h3>קצבה משוערת בגיל ${S.retAge}</h3>
+        <p>הצבירה בפנסיה ובגמל לקצבה בשנת ${nowY + toRet} צפויה להיות כ-<b class="n">${money(pensionAtRet)}</b>${real ? ' (בשקלים של היום)' : ''}. במקדם המרה של ${S.coef}, זו קצבה של כ-<b class="n">${money(pensionAtRet / S.coef)}</b> לחודש, לפני מס.</p>
+        <p class="hint">המקדם בפועל נקבע בפרישה, ותלוי בגיל, במין, בשאירים ובקרן (בערך 180–215; לנשים ובפרישה מוקדמת הוא גבוה יותר, ולכן הקצבה נמוכה יותר).</p></section>` : ''}`;
+    el._draw = () => {
+      const labels = Array.from({ length: years + 1 }, (_, y) => String(nowY + y));
+      const titles = labels.map((l, y) => y === 0 ? `היום (${l})` : `${l} · בעוד ${y} ${y === 1 ? 'שנה' : 'שנים'}${ageTxt(y)}`);
+      // every deposit scenario as its own line; the two partial ones only when both kinds of deposits exist
+      const scens = depPay > 0 && depOwn > 0 ? ['all', 'payroll', 'personal', 'none'] : ['all', 'none'];
+      const series = scens.map((s, j) => ({ name: SCEN[s], color: `var(--s${j + 1})`, values: labels.map((_, y) => tot(s, y)) }));
+      lineChart($('#fcLine'), { labels, titles, series });
+      $('#fcLineX').innerHTML = legendHtml(series, 'line') + tableHtml(['שנה', ...series.map(s => s.name)], labels.map((l, y) => [titles[y], ...series.map(s => s.values[y])]));
+      const types = INV_ORDER.filter(t => rows.some(x => x.a.type === t));
+      const stackS = types.map(t => ({ name: INV_TYPES[t].name, color: INV_TYPES[t].color, values: labels.map((_, y) => tot(sc, y, x => x.a.type === t)) }));
+      columnChart($('#fcStack'), { cats: labels, labels, titles, series: stackS, stacked: true });
+      $('#fcStackX').innerHTML = legendHtml(stackS) + tableHtml(['שנה', ...stackS.map(s => s.name)], labels.map((l, y) => [titles[y], ...stackS.map(s => s.values[y])]));
+    };
+  }
+
+  // ---------- mode 1b: years until a goal ----------
+  if (mode === 'goal') {
+    const G = S.goal;
+    const totAll = y => sum(rows.map(x => yv(x, y, sc))) / defl(y);
+    const locked = (x, y) => isAnnuity(x.a) && (!isNum(age) || age + y < S.retAge);
+    const totAvail = y => sum(rows.filter(x => !locked(x, y)).map(x => yv(x, y, sc))) / defl(y);
+    const first = f => { for (let y = 0; y <= H; y++) if (f(y) >= G) return y; return null; };
+    const yAll = first(totAll), yAvail = first(totAvail), hasAnn = rows.some(x => isAnnuity(x.a));
+    const when = y => y === null ? `<div class="k-v">לא בתוך ${H} שנה</div><div class="k-s">גם בהפקדות של היום</div>`
+      : y === 0 ? `<div class="k-v">כבר עכשיו</div><div class="k-s">השווי היום כבר מעל היעד</div>`
+      : `<div class="k-v">בעוד ${y} ${y === 1 ? 'שנה' : 'שנים'}</div><div class="k-s">בשנת ${nowY + y}${isNum(age) ? `, בגיל ${age + y}` : ''}</div>`;
+    body = `
+      <div class="kpis">
+        <div class="kpi an"><div class="k-l">היעד</div><div class="k-v">${moneyHtml(G)}</div><div class="k-s">${real ? 'בשקלים של היום' : 'בשקלים של אז'}</div></div>
+        <div class="kpi fa"><div class="k-l">${hasAnn ? 'כולל הפנסיה וגמל לקצבה' : 'מגיעים ליעד'}</div>${when(yAll)}</div>
+        ${hasAnn ? `<div class="kpi fb"><div class="k-l">בלי כספי הפנסיה${isNum(age) ? ` (עד גיל ${S.retAge})` : ''}</div>${when(yAvail)}</div>` : ''}
+        <div class="kpi an"><div class="k-l">היום</div><div class="k-v">${moneyHtml(today)}</div><div class="k-s">${G > today ? `חסרים ${money(G - today)}` : 'מעל היעד'}</div></div>
+      </div>
+      <p class="muted fc-note">${hasAnn ? (isNum(age) ? `כספי פנסיה וגמל לקצבה לא נזילים עד גיל ${S.retAge}, ולכן בחישוב ״בלי כספי הפנסיה״ הם נספרים רק מהגיל הזה.` : 'כדי לדעת מתי כספי הפנסיה משתחררים, צריך להזין שנת לידה. בינתיים ״בלי כספי הפנסיה״ לא סופר אותם בכלל.') : ''}
+        ההפקדות: ${SCEN[sc]}${sc === 'none' ? '' : ' (לפי ממוצע 12 החודשים האחרונים)'}.</p>
+      <section class="card"><h3>הדרך ליעד</h3><div id="fcGoalCh" class="ch"></div><div id="fcGoalX"></div></section>`;
+    el._draw = () => {
+      const last = Math.min(H, Math.max(10, (yAll ?? 30) + 3, (yAvail ?? 0) + 3));
+      const labels = Array.from({ length: last + 1 }, (_, y) => String(nowY + y));
+      const titles = labels.map((l, y) => y === 0 ? `היום (${l})` : `${l} · בעוד ${y} שנים${ageTxt(y)}`);
+      const series = [{ name: hasAnn ? 'כולל הפנסיה' : 'השווי הכולל', color: 'var(--s1)', values: labels.map((_, y) => totAll(y)) }];
+      if (hasAnn) series.push({ name: 'בלי כספי הפנסיה עד גיל הפרישה', color: 'var(--s2)', values: labels.map((_, y) => totAvail(y)) });
+      const vl = isNum(age) && toRet <= last ? [{ i: toRet, label: `גיל ${S.retAge}` }] : [];
+      lineChart($('#fcGoalCh'), { labels, titles, series, ref: { value: G, label: 'היעד' }, vlines: vl });
+      $('#fcGoalX').innerHTML = legendHtml(series, 'line') + tableHtml(['שנה', ...series.map(s => s.name)], labels.map((l, y) => [titles[y], ...series.map(s => s.values[y])]));
+    };
+  }
+
+  // ---------- mode 2: when can I stop working ----------
+  if (mode === 'fire') {
+    if (!isNum(age)) body = `<div class="card empty">כדי לחשב מתי אפשר לפרוש צריך להזין שנת לידה (למעלה).</div>`;
+    else if (!(S.spendNow > 0)) body = `<div class="card empty">צריך הוצאה חודשית בפרישה: מזינים אותה למעלה, או ממלאים את דו״ח ההוצאות.</div>`;
+    else {
+      const P = S.retAge;
+      const kMax = Math.min(H, Math.max(0, P - age) + 13);
+      let best = null;
+      for (let k = 0; k <= kMax; k++) { const p = firePlan(rows, S, age, H, k); if (p.ruleOk) { best = p; break; } }
+      const fireNum = 12 * S.spendNow / (S.swr / 100);
+      const hasAnn = rows.some(x => isAnnuity(x.a));
+      const show = best || firePlan(rows, S, age, H, kMax);
+      const bridgeYears = Math.max(0, P - show.age);
+      const sumLine = best ? `
+          <p class="fire-story">אפשר להפסיק לעבוד בגיל <b>${best.age}</b> (שנת ${nowY + best.k})${best.k === 0 ? ', כלומר כבר עכשיו' : ''}.
+          ${bridgeYears ? `מגיל ${best.age} עד ${P} (${bridgeYears} שנים) חיים מהחסכונות הנזילים: <b class="n">${money(best.Lret)}</b> ביום הפרישה.` : ''}
+          ${hasAnn ? `מגיל ${P} הקצבה המשוערת היא <b class="n">${money(best.annuity)}</b> לחודש` : `אין כספי פנסיה בחישוב`}${best.needAfter > 0 ? `, ואת ${money(best.needAfter / 12)} החסרים לחודש מושכים מהחסכונות: בגיל ${P} נשארים בהם <b class="n">${money(best.LatP)}</b>, ו-${PF1.format(S.swr)}% מהם בשנה הם ${money(best.LatP * S.swr / 100 / 12)} לחודש.` : ', והיא מכסה את כל ההוצאה.'}</p>
+          ${best.runOut ? `<p class="warn-line">⚠️ לפי ההנחות, החסכונות הנזילים נגמרים בגיל ${best.runOut}. חוק ה-${PF1.format(S.swr)}% מתקיים בגיל ${P}, אבל כדאי מרווח ביטחון.</p>` : `<p class="muted">לפי ההנחות, הכסף מחזיק עד גיל 95 לפחות.</p>`}`
+        : `<p class="warn-line">⚠️ לפי ההנחות, גם בגיל ${show.age} עוד אי אפשר לפרוש עם הוצאה של ${money(S.spendNow)} לחודש בחוק ה-${PF1.format(S.swr)}%. אפשר להוריד את ההוצאה, להגדיל הפקדות או לבחור כלל משיכה אחר.</p>`;
+      // candidate ages table
+      const ages = [...new Set([best ? best.age - 3 : null, best ? best.age - 1 : null, best?.age, 50, 55, 60, 62, 65, P].filter(v => isNum(v) && v >= age && v <= age + kMax))].sort((a, b) => a - b);
+      const cand = ages.map(a => firePlan(rows, S, age, H, a - age));
+      body = `
+        <div class="kpis">
+          <div class="kpi fa"><div class="k-l">אפשר להפסיק לעבוד</div><div class="k-v">${best ? `בגיל ${best.age}` : '—'}</div><div class="k-s">${best ? `שנת ${nowY + best.k}, בעוד ${best.k} שנים` : `לא עד גיל ${show.age}`}</div></div>
+          <div class="kpi an"><div class="k-l">הוצאה חודשית בפרישה</div><div class="k-v">${moneyHtml(S.spendNow)}</div><div class="k-s">בשקלים של היום</div></div>
+          <div class="kpi an"><div class="k-l">היעד לפי חוק ה-${PF1.format(S.swr)}% (בלי פנסיה)</div><div class="k-v">${moneyHtml(fireNum)}</div><div class="k-s">${PF1.format(100 / S.swr)} שנות הוצאה</div></div>
+          <div class="kpi fb"><div class="k-l">קצבה משוערת מגיל ${P}</div><div class="k-v">${hasAnn ? moneyHtml(show.annuity) : '—'}</div><div class="k-s">${hasAnn ? `מקדם ${S.coef}, לפני מס` : 'אין פנסיה בחישוב'}</div></div>
+        </div>
+        <section class="card">${sumLine}
+          ${rows.some(x => isHome(x.a)) ? `<p class="hint">🏠 דירה למגורים לא נספרת כאן, כי עדיין צריך איפה לגור. נדל״ן להשקעה נספר כנכס שאפשר לממש. את סוג הנכס משנים בעריכת החשבון.</p>` : ''}</section>
+        <section class="card"><h3>החסכונות לאורך החיים <small class="muted">בשקלים של היום</small></h3><div id="fcFire" class="ch"></div><div id="fcFireX"></div></section>
+        <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>הכסף נגמר</th></tr></thead><tbody>
+          ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret)}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
+            <td class="n">${c.bridgeOk ? moneyHtml(c.LatP) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.runOut ? `בגיל ${c.runOut}` : 'לא עד 95'}</td></tr>`).join('')}
+          </tbody></table></div></section>`;
+      el._draw = () => {
+        const labels = [], titles = [], liqV = [], penV = [];
+        for (let y = 0; y <= H; y++) {
+          labels.push(String(age + y)); titles.push(`גיל ${age + y} · שנת ${nowY + y}`);
+          if (y < show.k) {
+            liqV.push(sum(rows.filter(x => !isAnnuity(x.a) && !isHome(x.a)).map(x => yv(x, y, sc))) / defl(y));
+            penV.push(sum(rows.filter(x => isAnnuity(x.a)).map(x => yv(x, y, sc))) / defl(y));
+          } else {
+            const p = show.path[y - show.k];
+            liqV.push(p.L); penV.push(age + y >= P ? null : p.pen);
+          }
+        }
+        const series = [{ name: 'חסכונות נזילים', color: 'var(--s1)', values: liqV }];
+        if (hasAnn) series.push({ name: 'פנסיה וגמל לקצבה (עד הקצבה)', color: 'var(--s3)', values: penV });
+        const vl = [{ i: show.k, label: `פרישה ${show.age}` }]; if (P - age !== show.k && P - age <= H) vl.push({ i: P - age, label: `קצבה ${P}` });
+        lineChart($('#fcFire'), { labels, titles, series, vlines: vl });
+        $('#fcFireX').innerHTML = legendHtml(series, 'line') + tableHtml(['גיל', ...series.map(s => s.name)], labels.map((l, i) => [titles[i], ...series.map(s => s.values[i])]));
+      };
+    }
+  }
+
+  const tableYears = mode === 'years' ? H : null;
   el.innerHTML = `
-    <div class="pagehead"><h2>🔮 תחזית</h2></div>
-    <div class="card fc-set">
-      <div><label for="fcYears">כמה שנים קדימה</label><select id="fcYears">${yOpts.map(v => `<option value="${v}" ${S.years === v ? 'selected' : ''}>${v} שנים</option>`).join('')}
-        <option value="ret" ${S.years === 'ret' ? 'selected' : ''} ${isNum(age) ? '' : 'disabled'}>עד גיל ${S.retAge}${isNum(toRet) ? ` (${toRet} שנים)` : ' (צריך שנת לידה)'}</option></select></div>
-      <div><label for="fcInfl">אינפלציה שנתית</label><div class="unit"><input id="fcInfl" type="text" inputmode="decimal" value="${S.infl}"><span>%</span></div></div>
-      <div><label>להציג</label><div class="seg" id="fcReal"><button type="button" data-r="1" class="${S.real ? 'on' : ''}">בשקלים של היום</button><button type="button" data-r="0" class="${S.real ? '' : 'on'}">בשקלים של אז</button></div></div>
-      <div><label for="fcBirth">שנת לידה <small class="muted">(לא חובה)</small></label><input id="fcBirth" type="text" inputmode="numeric" maxlength="4" value="${isNum(S.birth) ? S.birth : ''}" placeholder="למשל 1988"></div>
-      <div><label for="fcRet">גיל פרישה</label><input id="fcRet" type="text" inputmode="numeric" maxlength="2" value="${S.retAge}"></div>
-    </div>
-
-    <div class="kpis">
-      <div class="kpi an"><div class="k-l">היום</div><div class="k-v">${moneyHtml(today)}</div><div class="k-s">${rows.length} חשבונות</div></div>
-      <div class="kpi fa"><div class="k-l">בעוד ${years} שנים, אם ממשיכים להפקיד</div><div class="k-v">${moneyHtml(endA)}</div><div class="k-s">הפקדה של ${money(depNow)} לחודש, שעולה עם האינפלציה</div></div>
-      <div class="kpi fb"><div class="k-l">בעוד ${years} שנים, בלי הפקדות חדשות</div><div class="k-v">${moneyHtml(endB)}</div><div class="k-s">רק התשואה על מה שיש היום</div></div>
-      <div class="kpi an"><div class="k-l">מה ההפקדות מוסיפות</div><div class="k-v">${moneyHtml(endA - endB)}</div><div class="k-s">ההבדל בין שני התרחישים</div></div>
-    </div>
-    <p class="muted fc-note">${S.real ? `הסכומים <b>בשקלים של היום</b> (אחרי ניכוי אינפלציה של ${PF1.format(S.infl)}% בשנה), כלומר כמה הם שווים בכוח קנייה של היום.` : `הסכומים <b>בשקלים של אז</b> (נומינלי). בגלל האינפלציה, כוח הקנייה שלהם יהיה נמוך יותר.`}
-      ${isNum(milY) && milY > 0 ? ` אם ממשיכים להפקיד, השווי יעבור את <b>${money(nextMil * 1e6)}</b> בשנת <b>${nowY + milY}</b>.` : ''}</p>
-    ${reBox}
-    ${missingBal.length || missingRet.length ? `<div class="notice">${missingBal.length ? `⚠️ אין יתרה ל: ${missingBal.map(x => esc(x.a.name)).join(', ')}. התחזית שלהם מתחילה מ-0. <a href="#invest">לעדכון יתרות ←</a><br>` : ''}${missingRet.length ? `⚠️ אין תשואה משוערת ל: ${missingRet.map(x => esc(x.a.name)).join(', ')}. חושב להם 0%.` : ''}</div>` : ''}
-
-    <section class="card"><h3>השווי הכולל לאורך השנים</h3><div id="fcLine" class="ch"></div><div id="fcLineX"></div></section>
-    <section class="card"><h3>ממה זה מורכב <small class="muted">אם ממשיכים להפקיד, לפי סוג</small></h3><div id="fcStack" class="ch"></div><div id="fcStackX"></div></section>
-    ${isNum(pensionAtRet) && pensionRows.length ? `<section class="card"><h3>קצבה משוערת בגיל ${S.retAge}</h3>
-      <p>הצבירה בקופות הפנסיה בשנת ${nowY + toRet} צפויה להיות כ-<b class="n">${money(pensionAtRet)}</b>${S.real ? ' (בשקלים של היום)' : ''}. במקדם המרה של 200 (הנחה כללית לפרישה סביב גיל 67), זו קצבה של כ-<b class="n">${money(pensionAtRet / 200)}</b> לחודש, לפני מס.</p>
-      <p class="hint">המקדם בפועל נקבע בפרישה, ותלוי בגיל, במין, בשאירים ובקרן (בערך 180–215; לנשים ובפרישה מוקדמת הוא גבוה יותר, ולכן הקצבה נמוכה יותר). בפנסיה מקיפה חלק מההפקדה הולך לביטוח, ולכן הצבירה בפועל תהיה מעט נמוכה יותר.</p></section>` : ''}
-
-    <section class="card"><h3>החשבונות בתחזית <small class="muted">אפשר לשנות כאן את ההפקדה החודשית ואת התשואה</small></h3>
-      <div class="tablewrap"><table class="stat fc-table"><thead><tr><th>חשבון</th><th class="n">היום</th><th>הפקדה לחודש</th><th>תשואה שנתית</th><th class="n">בעוד ${years} שנים</th><th class="n">בלי הפקדות</th></tr></thead><tbody>
-      ${rows.map(x => `<tr><td>${typeDot(x.a.type)}${esc(x.a.name)}</td>
+    <div class="pagehead"><h2>🔮 תחזית</h2>${modeSeg}</div>
+    <div class="card fc-set">${fields}${depScenSeg}</div>
+    ${inclFilterHtml('fcIncl')}
+    ${excluded.length ? `<p class="muted fc-note">לא נכללים: ${excluded.join(', ')}.</p>` : ''}
+    ${missingBal.length || missingRet.length ? `<div class="notice">${missingBal.length ? `⚠️ אין יתרה ל: ${missingBal.map(x => esc(x.a.name)).join(', ')}. החישוב שלהם מתחיל מ-0. <a href="#invest">לעדכון יתרות ←</a><br>` : ''}${missingRet.length ? `⚠️ אין תשואה משוערת ל: ${missingRet.map(x => esc(x.a.name)).join(', ')}. חושב להם 0%.` : ''}</div>` : ''}
+    ${body}
+    <section class="card"><h3>החשבונות בחישוב <small class="muted">אפשר לשנות כאן את ההפקדה החודשית ואת התשואה</small></h3>
+      <div class="tablewrap"><table class="stat fc-table"><thead><tr><th>חשבון</th><th class="n">היום</th><th>הפקדה לחודש</th><th>תשואה שנתית</th>${tableYears ? `<th class="n">בעוד ${tableYears} שנים</th><th class="n">בלי הפקדות</th>` : ''}</tr></thead><tbody>
+      ${rows.map(x => `<tr><td>${typeDot(x.a.type)}${esc(x.a.name)}${isAnnuity(x.a) ? ' <small class="muted">קצבה</small>' : ''}</td>
         <td class="n">${x.hasBal ? moneyHtml(x.start) : '<span class="muted">אין יתרה</span>'}</td>
         <td><div class="unit"><input type="text" inputmode="decimal" data-dep="${x.a.id}" value="${isNum(S.dep[x.a.id]) ? S.dep[x.a.id] : Math.round(x.avgD)}"><span>₪</span></div>
           <small class="muted">${isNum(S.dep[x.a.id]) ? `שונה ידנית · ממוצע: ${money(x.avgD)}` : 'ממוצע 12 החודשים'}</small></td>
         <td><div class="unit"><input type="text" inputmode="decimal" data-ret="${x.a.id}" value="${isNum(x.ret) ? x.ret : ''}" placeholder="—"><span>%</span></div></td>
-        <td class="n">${moneyHtml(x.A.yearly[years] / defl(years))}</td>
-        <td class="n">${moneyHtml(x.B.yearly[years] / defl(years))}</td></tr>`).join('')}
-      </tbody><tfoot><tr><td>סה״כ</td><td class="n">${moneyHtml(today)}</td><td class="n">${moneyHtml(depNow)}</td><td></td><td class="n">${moneyHtml(endA)}</td><td class="n">${moneyHtml(endB)}</td></tr></tfoot></table></div>
+        ${tableYears ? `<td class="n">${moneyHtml(yv(x, tableYears, sc) / defl(tableYears))}</td><td class="n">${moneyHtml(x.B.yearly[tableYears] / defl(tableYears))}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div>
       ${Object.keys(S.dep).length ? '<button type="button" class="btn ghost small" id="fcReset">החזרת ההפקדות לממוצע</button>' : ''}
     </section>
-
-    <details class="tips fc-assume" open><summary>ההנחות של התחזית</summary><ul>
-      <li>הבסיס הוא היתרה האחרונה שהוזנה לכל חשבון, והתשואה המשוערת שלו (לפני אינפלציה, אחרי דמי ניהול מהצבירה). תשואה משנים כאן או ב-📊 תשואה משוערת.</li>
+    <details class="tips fc-assume"><summary>ההנחות של התחזית</summary><ul>
+      <li>הבסיס הוא היתרה האחרונה שהוזנה לכל חשבון, והתשואה המשוערת שלו (לפני אינפלציה, אחרי דמי ניהול מהצבירה).</li>
       <li>ההפקדה החודשית היא כברירת מחדל הממוצע של 12 החודשים האחרונים, והיא עולה כל שנה בגובה האינפלציה. דמי ניהול מהפקדה, אם הוזנו, יורדים ממנה.</li>
-      <li>התשואה בפועל משתנה משנה לשנה. כאן היא קבועה, ולכן התוצאה היא קו ממוצע ולא מה שיקרה בדיוק.</li>
-      <li>לא מחושב מס במשיכה (רווח הון, מס על קצבה). נדל״ן מחושב לפי עליית ערך בלבד.</li>
-      <li>זו הערכה לתכנון, לא ייעוץ השקעות.</li></ul></details>`;
+      <li>התשואה בפועל משתנה משנה לשנה. כאן היא קבועה, ולכן התוצאה היא קו ממוצע.</li>
+      <li>במצב 2: מהפרישה כבר אין הפקדות. ההוצאה קבועה בשקלים של היום. כספי פנסיה וגמל לקצבה הופכים לקצבה בגיל קבלת הפנסיה (צבירה ÷ ${S.coef}). דירה למגורים לא נספרת; נדל״ן להשקעה נספר כנכס שאפשר לממש (אפשר להוציא אותו עם הסימון ״נדל״ן״).</li>
+      <li>לא מחושב מס (רווח הון, מס על קצבה). זו הערכה לתכנון, לא ייעוץ השקעות.</li></ul></details>`;
+  if (el._draw) { el._draw(); el._draw = null; }
 
-  // charts
-  const A = yearLabels.map((_, y) => tot('A', y)), B = yearLabels.map((_, y) => tot('B', y));
-  const series = [{ name: 'ממשיכים להפקיד', color: 'var(--s1)', values: A }, { name: 'בלי הפקדות חדשות', color: 'var(--s2)', values: B }];
-  lineChart($('#fcLine'), { labels: yearLabels, titles: yearTitles, series });
-  $('#fcLineX').innerHTML = legendHtml(series, 'line') + tableHtml(['שנה', ...series.map(s => s.name)], yearLabels.map((l, y) => [yearTitles[y], A[y], B[y]]));
-  const types = INV_ORDER.filter(t => rows.some(x => x.a.type === t));
-  const stackS = types.map(t => ({ name: INV_TYPES[t].name, color: INV_TYPES[t].color, values: yearLabels.map((_, y) => sum(rows.filter(x => x.a.type === t).map(x => x.A.yearly[y])) / defl(y)) }));
-  columnChart($('#fcStack'), { cats: yearLabels, labels: yearLabels, titles: yearTitles, series: stackS, stacked: true });
-  $('#fcStackX').innerHTML = legendHtml(stackS) + tableHtml(['שנה', ...stackS.map(s => s.name)], yearLabels.map((l, y) => [yearTitles[y], ...stackS.map(s => s.values[y])]));
-
-  // settings
-  $('#fcYears').onchange = e => saveFc({ years: e.target.value === 'ret' ? 'ret' : +e.target.value });
-  $('#fcInfl').onchange = e => { const v = parseNum(e.target.value); if (isNum(v) && v >= 0 && v < 30) saveFc({ infl: v }); else { toast('אינפלציה לא תקינה'); e.target.value = S.infl; } };
-  $('#fcReal').onclick = e => { const b = e.target.closest('[data-r]'); if (b) saveFc({ real: b.dataset.r === '1' }); };
-  $('#fcBirth').onchange = e => { const v = e.target.value.trim(); const n = +v; if (!v) saveFc({ birth: null, years: S.years === 'ret' ? 20 : S.years }); else if (n > 1920 && n <= nowY) saveFc({ birth: n }); else { toast('שנת לידה לא תקינה'); e.target.value = S.birth || ''; } };
-  $('#fcRet').onchange = e => { const n = +e.target.value; if (n >= 40 && n <= 80) saveFc({ retAge: n }); else { toast('גיל פרישה לא תקין'); e.target.value = S.retAge; } };
+  // ---------- events ----------
+  $('#fcMode').onclick = e => { const b = e.target.closest('[data-m]'); if (!b) return; const m = b.dataset.m; if (m === 'fire' ? mode !== 'fire' : mode === 'fire') saveFc({ mode: m === 'fire' ? 'fire' : 'years' }); };
+  if ($('#fcSub')) $('#fcSub').onclick = e => { const b = e.target.closest('[data-m]'); if (b && b.dataset.m !== mode) saveFc({ mode: b.dataset.m }); };
+  bindInclFilter('fcIncl', renderForecast);
+  $('#fcScen').onclick = e => { const b = e.target.closest('[data-s]'); if (b && b.dataset.s !== sc) saveFc({ depScen: b.dataset.s }); };
+  const num = (id, f) => { const i = $(id); if (i) i.onchange = () => f(i.value.trim(), parseNum(i.value)); };
+  if ($('#fcYears')) $('#fcYears').onchange = e => saveFc({ years: e.target.value === 'ret' ? 'ret' : +e.target.value });
+  num('#fcInfl', (s, v) => { if (isNum(v) && v >= 0 && v < 30) saveFc({ infl: v }); else { toast('אינפלציה לא תקינה'); renderForecast(); } });
+  num('#fcGoal', (s, v) => { if (isNum(v) && v > 0) saveFc({ goal: v }); else { toast('יעד לא תקין'); renderForecast(); } });
+  num('#fcSpend', (s, v) => { if (s === '') saveFc({ spend: null }); else if (isNum(v) && v > 0) saveFc({ spend: v }); else { toast('הוצאה לא תקינה'); renderForecast(); } });
+  if ($('#fcSwr')) $('#fcSwr').onchange = e => saveFc({ swr: +e.target.value });
+  if ($('#fcReal')) $('#fcReal').onclick = e => { const b = e.target.closest('[data-r]'); if (b) saveFc({ real: b.dataset.r === '1' }); };
+  num('#fcBirth', s => { const n = +s; if (!s) saveFc({ birth: null, years: S.years === 'ret' ? 20 : S.years }); else if (n > 1920 && n <= nowY) saveFc({ birth: n }); else { toast('שנת לידה לא תקינה'); renderForecast(); } });
+  num('#fcRet', s => { const n = +s; if (n >= 50 && n <= 80) saveFc({ retAge: n }); else { toast('גיל לא תקין'); renderForecast(); } });
   el.querySelectorAll('[data-dep]').forEach(inp => inp.onchange = () => {
     const v = parseNum(inp.value), dep = Object.assign({}, S.dep);
     if (inp.value.trim() === '' || v === null) delete dep[inp.dataset.dep];
