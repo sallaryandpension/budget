@@ -167,7 +167,7 @@ function openReturns() {
         <select class="retpick" aria-label="בחירה מהירה">${presetOpts}</select>
         <div class="unit"><input type="text" inputmode="decimal" data-acc="${a.id}" value="${isNum(v) ? v : ''}" placeholder="—"><span>%</span></div></div>`;
     }).join('')}</div>
-    <p class="hint">נדל״ן מוגדר ל-2% (עליית ערך בלבד), כי השוק היום רחוק מהעליות של השנים הקודמות. בקריפטו אין ברירת מחדל.</p>
+    <p class="hint">בנדל״ן יש שתי הערכות, כי העבר והיום שונים מאוד: לפי העבר כ-${RE_PAST}% בשנה (ממוצע 2006–2018 לפי בנק ישראל), ולפי המצב היום כ-${RE_NOW}% (המחירים ירדו כ-1–2% בשנה האחרונה, לפי הלמ״ס). ברירת המחדל היא 3%, באמצע. התחזית מציגה את שתיהן. זו עליית הערך בלבד: שכר דירה נרשם בהכנסות. בקריפטו אין ברירת מחדל.</p>
     <div class="sheet-actions"><button type="button" class="btn ghost" data-close>ביטול</button><button type="button" class="btn" id="retSave">שמירה</button></div>`);
   sh.querySelectorAll('.retpick').forEach(s => s.onchange = () => {
     if (s.value !== '') s.closest('.balrow').querySelector('[data-acc]').value = s.value;
@@ -223,7 +223,7 @@ function openAccount(id, presetType) {
       <div class="retrow">${num('ret', isNum(suggestReturn(f)) ? String(suggestReturn(f)) : '')}
         <small class="muted">${isNum(suggestReturn(f)) ? `ריק = ברירת המחדל לסוג הזה (${pct(suggestReturn(f))})` : 'אין ברירת מחדל לסוג הזה'}</small></div>
       <div class="chips small" id="retChips">${RETURN_PRESETS.map(([n, v]) => `<button type="button" class="chip${f.ret === v ? ' on' : ''}" data-ret="${v}">${esc(n)} ${pct(v)}</button>`).join('')}</div>
-      <p class="hint">הערכה כללית לטווח ארוך, לפני אינפלציה ואחרי דמי ניהול. היא משמשת לתחזיות, ואפשר לשנות אותה בכל זמן.${f.type === 'realestate' ? ' בנדל״ן זו עליית הערך בלבד: שכר דירה נרשם בדו״ח ההכנסות.' : ''}</p>
+      <p class="hint">הערכה כללית לטווח ארוך, לפני אינפלציה ואחרי דמי ניהול. היא משמשת לתחזיות, ואפשר לשנות אותה בכל זמן.${f.type === 'realestate' ? ` בנדל״ן זו עליית הערך בלבד (שכר דירה נרשם בדו״ח ההכנסות). יש שתי הערכות: לפי העבר כ-${RE_PAST}% (ממוצע 2006–2018), ולפי המצב היום כ-${RE_NOW}% (המחירים יורדים בשנה האחרונה).` : ''}</p>
       ${T.fees ? `
         <label>דמי ניהול</label>
         <div class="row"><div><small class="muted">מההפקדה</small>${num('feeDep', '0')}</div><div><small class="muted">מהצבירה (שנתי)</small>${num('feeBal', '0')}</div></div>` : ''}

@@ -19,8 +19,8 @@ function avgDeposit12(a) {
   const cur = curMonth(), ms = monthRange(shiftMonth(cur, -11), cur).filter(invDepMonth);
   return ms.length ? sum(ms.map(m => invCell(m, a.id)?.d)) / ms.length : 0;
 }
-function projectAccount(a, start, dep, years, infl, withDeposits) {
-  const r = accReturn(a), rm = Math.pow(1 + (isNum(r) ? r : 0) / 100, 1 / 12) - 1;
+function projectAccount(a, start, dep, years, infl, withDeposits, rateOverride) {
+  const r = isNum(rateOverride) ? rateOverride : accReturn(a), rm = Math.pow(1 + (isNum(r) ? r : 0) / 100, 1 / 12) - 1;
   const im = Math.pow(1 + infl / 100, 1 / 12) - 1, fee = isNum(a.feeDep) ? a.feeDep / 100 : 0;
   let b = start, paid = 0;
   const yearly = [b], paidYearly = [0];
@@ -63,6 +63,18 @@ function renderForecast() {
   const pensionRows = rows.filter(x => x.a.type === 'pension' || (x.a.type === 'gemel' && x.a.sub === 'גמל לתגמולים ופיצויים'));
   const pensionAtRet = isNum(toRet) && toRet <= years ? sum(pensionRows.map(x => x.A.yearly[toRet])) / defl(toRet) : null;
   const yOpts = [5, 10, 15, 20, 25, 30];
+  // Real estate: two estimates side by side (by the past / by the present), plus what is set now.
+  const reRows = rows.filter(x => x.a.type === 'realestate');
+  const reAt = rate => sum(reRows.map(x => projectAccount(x.a, x.start, x.dep, years, S.infl, true, rate).yearly[years])) / defl(years);
+  const reSet = sum(reRows.map(x => x.A.yearly[years])) / defl(years);
+  const reRates = [...new Set(reRows.map(x => accReturn(x.a)))];
+  const reBox = reRows.length ? (() => {
+    const cell = (label, v) => `<div><span>${label}</span><b class="n">${money(v)}</b><small>סה״כ כל החשבונות: ${money(endA - reSet + v)}</small></div>`;
+    return `<section class="card re2"><h3>🏠 שתי הערכות לנדל״ן <small class="muted">בעוד ${years} שנים${S.real ? ', בשקלים של היום' : ''}</small></h3>
+      <div class="re2-grid">${cell(`לפי העבר (${RE_PAST}% בשנה)`, reAt(RE_PAST))}${cell(`לפי המצב היום (${RE_NOW}% בשנה)`, reAt(RE_NOW))}
+        ${cell(`מה שמוגדר עכשיו${reRates.length === 1 && isNum(reRates[0]) ? ` (${pct(reRates[0])})` : ''}`, reSet)}</div>
+      <p class="hint">היום הנדל״ן שווה ${money(sum(reRows.map(x => x.start)))}. <b>העבר:</b> בין 2006 ל-2018 מחירי הדירות עלו בממוצע 6.3% בשנה (5.3% מעל האינפלציה), לפי בנק ישראל. <b>היום:</b> מדד מחירי הדירות של הלמ״ס ירד ב-1.8% בשנה עד יולי–אוגוסט 2026, ו-2025 הסתיימה בירידה של כ-0.9%. ״סה״כ כל החשבונות״ הוא התרחיש שבו ממשיכים להפקיד.</p></section>`;
+  })() : '';
 
   el.innerHTML = `
     <div class="pagehead"><h2>🔮 תחזית</h2></div>
@@ -83,6 +95,7 @@ function renderForecast() {
     </div>
     <p class="muted fc-note">${S.real ? `הסכומים <b>בשקלים של היום</b> (אחרי ניכוי אינפלציה של ${PF1.format(S.infl)}% בשנה), כלומר כמה הם שווים בכוח קנייה של היום.` : `הסכומים <b>בשקלים של אז</b> (נומינלי). בגלל האינפלציה, כוח הקנייה שלהם יהיה נמוך יותר.`}
       ${isNum(milY) && milY > 0 ? ` אם ממשיכים להפקיד, השווי יעבור את <b>${money(nextMil * 1e6)}</b> בשנת <b>${nowY + milY}</b>.` : ''}</p>
+    ${reBox}
     ${missingBal.length || missingRet.length ? `<div class="notice">${missingBal.length ? `⚠️ אין יתרה ל: ${missingBal.map(x => esc(x.a.name)).join(', ')}. התחזית שלהם מתחילה מ-0. <a href="#invest">לעדכון יתרות ←</a><br>` : ''}${missingRet.length ? `⚠️ אין תשואה משוערת ל: ${missingRet.map(x => esc(x.a.name)).join(', ')}. חושב להם 0%.` : ''}</div>` : ''}
 
     <section class="card"><h3>השווי הכולל לאורך השנים</h3><div id="fcLine" class="ch"></div><div id="fcLineX"></div></section>
