@@ -158,6 +158,7 @@ function cleanVals(vals, fix) {
   }
   return out;
 }
+const SAFE_ID = /^[\w-]{1,40}$/;          // ids end up in HTML attributes and selectors
 const toNum = v => isNum(v) ? v : (typeof v === 'string' && v.trim() !== '' && isNum(+v) ? +v : undefined);
 function normalize(d) {
   const f = freshData();
@@ -166,12 +167,12 @@ function normalize(d) {
   if (!validMonth(d.settings.startMonth)) d.settings.startMonth = f.settings.startMonth;
   for (const r of ['expenses', 'income']) {
     const x = d[r] && typeof d[r] === 'object' ? d[r] : {};
-    x.cats = Array.isArray(x.cats) ? x.cats.filter(c => c && c.id && typeof c.name === 'string') : [];
+    x.cats = Array.isArray(x.cats) ? x.cats.filter(c => c && SAFE_ID.test(c.id) && typeof c.name === 'string') : [];
     x.vals = cleanVals(x.vals, toNum);
     d[r] = x;
   }
   const iv = d.invest && typeof d.invest === 'object' ? d.invest : {};
-  iv.accs = Array.isArray(iv.accs) ? iv.accs.filter(a => a && a.id && INV_TYPES[a.type]) : [];
+  iv.accs = Array.isArray(iv.accs) ? iv.accs.filter(a => a && SAFE_ID.test(a.id) && INV_TYPES[a.type] && typeof a.name === 'string') : [];
   iv.vals = cleanVals(iv.vals, v => {
     if (!v || typeof v !== 'object') return;
     const o = {}, dd = toNum(v.d), bb = toNum(v.b);

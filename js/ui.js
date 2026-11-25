@@ -37,7 +37,8 @@ function dialog(title, html, buttons) {
       <div class="dlg-btns">${buttons.map((b, i) => `<button type="button" class="btn ${b.cls || ''}" data-i="${i}">${esc(b.label)}</button>`).join('')}</div>`;
     $('#dlg').classList.remove('hidden'); document.body.classList.add('lock');
     box.querySelectorAll('[data-i]').forEach(b => b.onclick = () => closeDialog(buttons[+b.dataset.i].value));
-    const first = box.querySelector('.btn:not(.ghost)') || box.querySelector('.btn');
+    // For a destructive choice the safe button (cancel) gets the focus, so Enter does not delete.
+    const first = box.querySelector('.btn.danger') ? box.querySelector('.btn.ghost') : (box.querySelector('.btn:not(.ghost)') || box.querySelector('.btn'));
     first && first.focus();
   });
 }

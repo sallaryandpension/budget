@@ -168,7 +168,8 @@ function mountGrid(root, spec) {
     if (bad) msg += ` · ${bad} ערכים לא מספריים דולגו`;
     if (outside) msg += ` · ${outside} ערכים מחוץ לטבלה`;
     toast(msg);
-    const again = cellAt(r0, c0); again && again.focus();
+    const again = $$('input.cell').find(x => x.dataset.key === inp.dataset.key);   // the table was rebuilt
+    again && again.focus();
   });
   table.addEventListener('click', e => {
     const b = e.target.closest('[data-item]');
