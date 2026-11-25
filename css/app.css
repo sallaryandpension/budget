@@ -227,6 +227,26 @@ table.stat { width: 100%; border-collapse: collapse; font-size: 14px; }
 .dlg-text p { margin: 6px 0; }
 .dlg-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .dlg-btns .btn { flex: 1; }
+/* ---------- Excel import ---------- */
+.import-cta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 16px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 12px; font-size: 14px; }
+.sheet.wide { max-width: 1000px; }
+.imp-sheet h4 { margin: 16px 0 8px; font-size: 15px; }
+.imp-sheet h4 small { font-weight: 500; }
+table.imp { width: 100%; border-collapse: collapse; font-size: 14px; }
+.imp th, .imp td { padding: 5px 6px; border-bottom: 1px solid var(--line2); text-align: right; white-space: nowrap; }
+.imp th { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.imp td.n, .imp th.n { text-align: left; }
+.imp select, .imp input { padding: 5px 8px; font-size: 14px; width: auto; }
+.imp .as { width: 170px; }
+.imp .asc { display: flex; gap: 6px; align-items: center; }
+.imp tr.off td:first-child, .imp tr.off .n { color: var(--muted); }
+.imp tr.off .as { opacity: .45; }
+.tag { font-size: 11px; background: var(--line2); color: var(--muted); border-radius: 99px; padding: 1px 7px; margin-inline-start: 4px; }
+.state { font-size: 11.5px; border-radius: 99px; padding: 1px 7px; }
+.state.new { background: var(--brand-soft); color: var(--brand); }
+.state.old { background: var(--line2); color: var(--muted); }
+.imp-future { margin-top: 14px; }
+.imp-sum { margin-top: 14px; padding: 10px 12px; background: var(--brand-soft); border-radius: 10px; font-size: 14px; }
 .toast { position: fixed; bottom: calc(22px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%) translateY(20px); background: #222; color: #fff;
   padding: 10px 18px; border-radius: 99px; font-size: 14px; opacity: 0; pointer-events: none; transition: .25s; z-index: 70; max-width: calc(100% - 32px); text-align: center; }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

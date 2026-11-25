@@ -58,15 +58,13 @@ const confirmBox = (title, html, okLabel = 'אישור', danger = false) =>
   dialog(title, html, [{ label: okLabel, value: true, cls: danger ? 'danger' : '' }, { label: 'ביטול', value: false, cls: 'ghost' }]);
 
 /* ---------- Files ---------- */
-function downloadFile(name, text, type) {
-  const blob = new Blob([text], { type });
+function downloadFile(name, content, type) {
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
-const csvCell = v => { const s = String(v ?? ''); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-const toCsv = rows => '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
 
 /* ---------- Year bar (shared by the three reports) ---------- */
 function currentYearOf(kind) {

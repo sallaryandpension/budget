@@ -54,8 +54,10 @@ function renderHome() {
         <a class="step" href="#income"><b>2</b><span>💼 דו״ח הכנסות</span><small>משכורת ושאר מקורות ההכנסה</small></a>
         <a class="step" href="#invest"><b>3</b><span>📈 דו״ח השקעות</span><small>פנסיה, השתלמות, גמל וברוקרים</small></a>
       </div>
+      ${IMPORT_HINT}
       <p class="hint">${cfg ? '✓ הנתונים מסונכרנים ל-GitHub.' : 'כדי שהנתונים יישמרו ב-repository פרטי ב-GitHub ויהיו זמינים בכל מכשיר: <a href="#settings">⚙️ הגדרות ← סנכרון</a>.'}</p>
     </div>`;
+    bindImportHint(el);
     return;
   }
   const opts = periodOptions();

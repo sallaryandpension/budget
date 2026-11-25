@@ -218,7 +218,8 @@ function renderReport(r) {
       <div class="tools">
         <button type="button" class="btn ghost small" data-a="cats">✎ קטגוריות</button>
         <button type="button" class="btn ghost small" data-a="flip">⇄ ${spec.flip ? 'חודשים בעמודות' : 'חודשים בשורות'}</button>
-        <button type="button" class="btn ghost small" data-a="csv">⬇ CSV</button>
+        <button type="button" class="btn ghost small" data-a="xlout" title="כל הדוחות בקובץ אקסל אחד">⬇ אקסל</button>
+        <button type="button" class="btn ghost small" data-a="xlin" title="ייבוא מקובץ אקסל או CSV">⬆ ייבוא</button>
       </div></div>
     ${yearBar(r)}
     ${spec.items.length ? `<div class="gridwrap">${gridHtml(spec)}</div><p class="hint" data-info></p>` : '<div class="empty">כל הקטגוריות מוסתרות. אפשר להפעיל אותן ב״קטגוריות״.</div>'}
@@ -227,7 +228,14 @@ function renderReport(r) {
   mountGrid(el, spec);
   el.querySelector('[data-a="cats"]').onclick = () => openCatManager(r);
   el.querySelector('[data-a="flip"]').onclick = () => { ui.flip[r] = !ui.flip[r]; saveUi(); renderView(r); };
-  el.querySelector('[data-a="csv"]').onclick = () => exportCsv(r);
+  el.querySelector('[data-a="xlout"]').onclick = exportExcel;
+  el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
+}
+const IMPORT_HINT = `<div class="import-cta">📊 יש לכם כבר טבלה באקסל? <button type="button" class="btn ghost small" data-xlin>⬆ ייבוא מאקסל</button>
+  <button type="button" class="btn ghost small" data-xlout>⬇ קובץ אקסל למילוי</button></div>`;
+function bindImportHint(el) {
+  el.querySelectorAll('[data-xlin]').forEach(b => b.onclick = pickExcelFile);
+  el.querySelectorAll('[data-xlout]').forEach(b => b.onclick = exportExcel);
 }
 
 /* First time: choose categories. */
@@ -247,7 +255,9 @@ function renderSetup(r) {
       <button type="button" class="btn big" id="setupGo" ${st.sel.size ? '' : 'disabled'}>יצירת הטבלה (${st.sel.size} קטגוריות)</button>
     </div>
     <p class="hint">החודש הראשון משותף לכל הדוחות. הטבלה מתארכת לבד בכל חודש חדש.</p>
+    ${IMPORT_HINT}
   </div>`;
+  bindImportHint(el);
   el.querySelector('.chips').onclick = e => {
     const b = e.target.closest('[data-n]'); if (!b) return;
     const n = b.dataset.n; st.sel.has(n) ? st.sel.delete(n) : st.sel.add(n); renderSetup(r);
@@ -318,22 +328,4 @@ function openCatManager(r, focusId) {
     if (focusId) { const row = sh.querySelector(`.catrow[data-id="${focusId}"]`); if (row) { row.scrollIntoView({ block: 'center' }); row.querySelector('.nm').focus(); } focusId = null; }
   };
   draw();
-}
-
-function exportCsv(kind) {
-  const months = allMonths();
-  let rows;
-  if (kind === 'invest') {
-    const accs = sortedAccs();
-    rows = [['חודש', ...accs.flatMap(a => [a.name + ' – הפקדה', a.name + ' – יתרה'])],
-      ...months.map(m => [monthNum(m), ...accs.flatMap(a => [invCell(m, a.id)?.d ?? '', invCell(m, a.id)?.b ?? ''])])];
-  } else {
-    const cats = data[kind].cats;
-    rows = [['חודש', ...cats.map(c => c.name), 'סה״כ'],
-      ...months.map(m => {
-        const vs = cats.map(c => data[kind].vals[m]?.[c.id]);
-        return [monthNum(m), ...vs.map(v => v ?? ''), monthHasData(kind, m) ? r2(sum(vs)) : ''];
-      })];
-  }
-  downloadFile(`${kind}-${todayStr()}.csv`, toCsv(rows), 'text/csv;charset=utf-8');
 }

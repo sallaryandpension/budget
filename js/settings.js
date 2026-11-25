@@ -48,11 +48,15 @@ function renderSettings() {
         <button type="button" class="btn ghost" id="impJson">⬆ שחזור מגיבוי</button>
         <input type="file" id="impFile" accept=".json,application/json" hidden>
       </div>
-      <label>ייצוא לאקסל (CSV)</label>
+    </section>
+
+    <section class="card">
+      <h3>📊 אקסל</h3>
+      <p class="muted">הורדה: קובץ אחד עם גיליון לכל דוח (הוצאות, הכנסות, הפקדות ויתרות), עם כל הקטגוריות והחודשים. אפשר למלא אותו באקסל ולייבא בחזרה.
+        ייבוא: מהקובץ הזה, או ישירות מקובץ אקסל משלכם. האפליקציה מזהה את החודשים ומציגה מסך שבו בוחרים לאן כל עמודה נכנסת.</p>
       <div class="row btns">
-        <button type="button" class="btn ghost" data-csv="expenses">הוצאות</button>
-        <button type="button" class="btn ghost" data-csv="income">הכנסות</button>
-        <button type="button" class="btn ghost" data-csv="invest">השקעות</button>
+        <button type="button" class="btn ghost" id="xlOut">⬇ הורדת קובץ אקסל</button>
+        <button type="button" class="btn ghost" id="xlIn">⬆ ייבוא מאקסל או CSV</button>
       </div>
     </section>
 
@@ -103,7 +107,8 @@ function renderSettings() {
     const ok = await confirmBox('שחזור מגיבוי', `<p>הקובץ מכיל ${n.expenses.cats.length} קטגוריות הוצאה, ${n.income.cats.length} קטגוריות הכנסה ו-${n.invest.accs.length} חשבונות השקעה.</p><p><b>כל הנתונים הנוכחיים יוחלפו בתוכן הקובץ.</b></p>`, 'שחזור', true);
     if (ok) { change({ t: 'replace', data: n }); toast('הנתונים שוחזרו'); }
   };
-  $$('[data-csv]', el).forEach(b => b.onclick = () => exportCsv(b.dataset.csv));
+  $('#xlOut').onclick = exportExcel;
+  $('#xlIn').onclick = pickExcelFile;
   $('#resetAll').onclick = async () => {
     const ok = await confirmBox('מחיקת כל הנתונים', '<p>כל הדוחות, הקטגוריות, החשבונות והנתונים יימחקו. מומלץ לייצא גיבוי לפני כן.</p>', 'מחיקה', true);
     if (ok) { change({ t: 'replace', data: freshData() }); toast('כל הנתונים נמחקו'); location.hash = '#home'; }

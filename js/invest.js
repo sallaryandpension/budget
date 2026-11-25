@@ -35,7 +35,9 @@ function renderInvest() {
       <div class="typegrid">${INV_ORDER.map(t => `<button type="button" class="typecard" data-type="${t}" style="--c:${INV_TYPES[t].color}">
         <b>${INV_TYPES[t].name}</b><span>${INV_TYPES[t].hint}</span><em>+ הוספה</em></button>`).join('')}</div>
       <p class="hint">בכל חודש רושמים שני מספרים לכל חשבון: כמה הופקד באותו חודש, ומה היתרה (השווי) בסוף החודש. לא חייבים למלא יתרה בכל חודש: אפשר פעם ברבעון, לפי הדוח של הקרן.</p>
+      ${IMPORT_HINT}
     </div>`;
+    bindImportHint(el);
     el.querySelectorAll('[data-type]').forEach(b => b.onclick = () => openAccount(null, b.dataset.type));
     return;
   }
@@ -46,7 +48,8 @@ function renderInvest() {
       <div class="tools">
         <button type="button" class="btn small" data-a="add">+ חשבון</button>
         <button type="button" class="btn ghost small" data-a="flip">⇄ ${spec.flip ? 'חודשים בעמודות' : 'חודשים בשורות'}</button>
-        <button type="button" class="btn ghost small" data-a="csv">⬇ CSV</button>
+        <button type="button" class="btn ghost small" data-a="xlout" title="כל הדוחות בקובץ אקסל אחד">⬇ אקסל</button>
+        <button type="button" class="btn ghost small" data-a="xlin" title="ייבוא מקובץ אקסל או CSV">⬆ ייבוא</button>
       </div></div>
     <div class="bar2">${yearBar('invest')}
       <div class="seg mode" data-mode>
@@ -68,7 +71,8 @@ function renderInvest() {
   };
   el.querySelector('[data-a="add"]').onclick = () => openAccount(null);
   el.querySelector('[data-a="flip"]').onclick = () => { ui.flip.invest = !ui.flip.invest; saveUi(); renderView('invest'); };
-  el.querySelector('[data-a="csv"]').onclick = () => exportCsv('invest');
+  el.querySelector('[data-a="xlout"]').onclick = exportExcel;
+  el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
   el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openAccount(b.dataset.edit));
 }
 
