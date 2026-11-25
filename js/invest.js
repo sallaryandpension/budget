@@ -105,9 +105,11 @@ function accCard(a) {
   </div>`;
 }
 
-const NAME_HINT = { broker: 'למשל: IBI, Interactive Brokers', deposit: 'למשל: פיקדון לאומי 12 חודשים', policy: 'למשל: פוליסת חיסכון הראל', other: 'למשל: קרן כספית, דירה להשקעה, ביטקוין' };
-const PROVIDER_LABEL = { broker: 'בית השקעות / ברוקר', deposit: 'בנק', policy: 'חברת ביטוח', other: 'איפה מוחזק' };
-const TRACK_HINT = { broker: 'למשל: מדדים', deposit: 'למשל: 12 חודשים, צמוד, יציאה ביום 90', other: '' };
+const NAME_HINT = { broker: 'למשל: IBI, Interactive Brokers', deposit: 'למשל: פיקדון לאומי 12 חודשים', policy: 'למשל: פוליסת חיסכון הראל',
+  cash: 'למשל: עו״ש לאומי', realestate: 'למשל: דירה בחיפה', other: 'למשל: קרן כספית, ביטקוין, RSU' };
+const PROVIDER_LABEL = { broker: 'בית השקעות / ברוקר', deposit: 'בנק', policy: 'חברת ביטוח', cash: 'בנק', realestate: 'מיקום', other: 'איפה מוחזק' };
+const TRACK_HINT = { broker: 'למשל: מדדים', deposit: 'למשל: 12 חודשים, צמוד, יציאה ביום 90', cash: '', realestate: 'למשל: 4 חדרים, מושכרת', other: '' };
+const TRACK_LABEL = { cash: 'הערה קצרה', realestate: 'פרטים' };
 
 /* Update all balances at once, for one month (default: this month). This is how the current
    value of every account is entered: without it the gains cannot be known. */
@@ -168,7 +170,7 @@ function openAccount(id, presetType) {
       <datalist id="ownersList">${[...new Set(data.invest.accs.map(a => a.owner).filter(Boolean))].map(o => `<option value="${esc(o)}">`).join('')}</datalist>
       <div class="row">
         <div><label for="aProv">${PROVIDER_LABEL[f.type] || 'גוף מנהל'}</label><input id="aProv" value="${esc(f.provider || '')}" maxlength="40"></div>
-        <div><label for="aTrack">${T.term ? 'תנאים' : 'מסלול השקעה'}</label><input id="aTrack" value="${esc(f.track || '')}" maxlength="40" placeholder="${TRACK_HINT[f.type] || 'למשל: מניות, S&P 500, תלוי גיל'}"></div>
+        <div><label for="aTrack">${T.term ? 'תנאים' : TRACK_LABEL[f.type] || 'מסלול השקעה'}</label><input id="aTrack" value="${esc(f.track || '')}" maxlength="40" placeholder="${TRACK_HINT[f.type] || 'למשל: מניות, S&P 500, תלוי גיל'}"></div>
       </div>
       <div class="row">
         <div><label for="aOpen">חודש פתיחה</label><input type="month" id="aOpen" value="${esc(f.open || '')}"></div>

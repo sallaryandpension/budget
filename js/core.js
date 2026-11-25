@@ -141,11 +141,17 @@ const INV_TYPES = {
   deposit: { name: 'פיקדון / חיסכון בבנק', short: 'פיקדון', color: '#2a8c9c', source: 'bank',
     subs: ['פיקדון שקלי', 'פיקדון צמוד מדד', 'פיקדון במט״ח', 'תוכנית חיסכון', 'פק״מ', 'חשבון חיסכון בריבית'], split: false, term: true,
     hint: 'כסף בבנק לתקופה קבועה, בריבית. נזיל בתום התקופה.' },
-  other: { name: 'השקעה אחרת', short: 'אחר', color: '#8a7a55', source: 'bank',
-    subs: ['קרן כספית', 'מניות / אופציות מהעבודה (RSU)', 'נדל״ן', 'קריפטו', 'מט״ח / מזומן', 'זהב', 'הלוואות P2P', 'הלוואה שנתתי', 'אחר'], split: false,
-    hint: 'קרן כספית, RSU, נדל״ן, קריפטו, זהב וכל השקעה אחרת.' },
+  cash: { name: 'עו״ש ומזומן', short: 'עו״ש', color: '#c9a227', source: 'bank',
+    subs: ['עו״ש', 'עו״ש במט״ח', 'מזומן'], split: false,
+    hint: 'הכסף בחשבון העו״ש ובמזומן. מספיק לעדכן את היתרה מדי פעם.' },
+  realestate: { name: 'נדל״ן', short: 'נדל״ן', color: '#a0522d', source: 'bank',
+    subs: ['דירה למגורים', 'דירה להשקעה', 'קרקע', 'נדל״ן בחו״ל', 'קרן נדל״ן / ריט'], split: false,
+    hint: 'דירה, קרקע או קרן נדל״ן. ביתרה רושמים שווי משוער, ובהפקדות את מה שהושקע.' },
+  other: { name: 'השקעה אחרת', short: 'אחר', color: '#7d7d7d', source: 'bank',
+    subs: ['קרן כספית', 'מניות / אופציות מהעבודה (RSU)', 'קריפטו', 'זהב', 'מט״ח', 'הלוואות P2P', 'הלוואה שנתתי', 'אחר'], split: false,
+    hint: 'קרן כספית, RSU, קריפטו, זהב וכל השקעה אחרת.' },
 };
-const INV_ORDER = ['pension', 'hish', 'gemel', 'policy', 'broker', 'deposit', 'other'];
+const INV_ORDER = ['pension', 'hish', 'gemel', 'policy', 'broker', 'deposit', 'cash', 'realestate', 'other'];
 const SOURCES = { payroll: 'מהמשכורת', bank: 'מחשבון הבנק' };
 
 /* ---------- Data model ---------- */
