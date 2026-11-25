@@ -14,7 +14,7 @@
    No tax is applied. This is an estimate for planning, not advice.
    ===================================================================== */
 
-const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all', lastAge: 95 };
+const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all', lastAge: 95, sellRE: false };
 const SPEND_STEPS = [0, 10, 20, 30, 50];                    // quick "spend more than today" buttons, % above the average
 /* Which deposits go on: those from the salary depend on the employer (pension, study fund), the
    personal ones depend on the person (broker, bank). Each account says where its deposits come from. */
@@ -30,8 +30,10 @@ const isIncluded = a => { const g = accGroup(a); return g === 'other' || inclGro
 /* Money paid out only as a monthly pension (annuity): pension funds and provident funds for pension. */
 const isAnnuity = a => a.type === 'pension' || (a.type === 'gemel' && a.sub === 'גמל לתגמולים ופיצויים');
 const realRate = (a, infl) => (1 + (accReturn(a) ?? 0) / 100) / (1 + infl / 100) - 1;
-/* A home you live in cannot pay for retirement (you still need somewhere to live). */
+/* A home you live in cannot pay for retirement (you still need somewhere to live). Other real estate
+   counts as money to live on only when the user chose to sell it (S.sellRE). */
 const isHome = a => a.type === 'realestate' && a.sub === 'דירה למגורים';
+const livesOn = (a, S) => !isAnnuity(a) && !(a.type === 'realestate' && (isHome(a) || !S.sellRE));
 
 function inclFilterHtml(id) {
   const inc = inclGroups();
@@ -88,7 +90,7 @@ function fcRows(S, years) {
      3. the money does not run out before the age it has to last to (S.lastAge, default 95). */
 function firePlan(rows, S, age, H, k) {
   const dR = y => Math.pow(1 + S.infl / 100, y);
-  const liq = rows.filter(x => !isAnnuity(x.a) && !isHome(x.a)), ann = rows.filter(x => isAnnuity(x.a));
+  const liq = rows.filter(x => livesOn(x.a, S)), ann = rows.filter(x => isAnnuity(x.a));
   const annual = 12 * S.spendNow, P = S.retAge, swr = S.swr / 100, sc = S.depScen;
   let L = sum(liq.map(x => yv(x, k, sc))) / dR(k);
   const Lret = L;
@@ -163,7 +165,9 @@ function renderForecast() {
       <small class="muted">ממוצע ההוצאות ב-12 החודשים האחרונים: ${money(avgSpend)}${isNum(S.spend) ? '' : ' (ברירת המחדל)'}</small>` : '<small class="muted">אין עדיין הוצאות בדו״ח, אז צריך להזין סכום.</small>'}</div>
     <div><label for="fcSwr">כלל משיכה</label><select id="fcSwr">${[3, 3.5, 4, 4.5, 5].map(v => `<option value="${v}" ${S.swr === v ? 'selected' : ''}>חוק ה-${PF1.format(v)}%</option>`).join('')}</select></div>
     <div><label for="fcLast">הכסף צריך להחזיק עד גיל</label><input id="fcLast" type="text" inputmode="numeric" maxlength="3" value="${S.lastAge}"></div>
-    ${fBirth}${fRet}${fInfl}`;
+    ${fBirth}${fRet}${fInfl}
+    <div><label>נדל״ן</label><div class="seg" id="fcSellRE"><button type="button" data-v="0" class="${S.sellRE ? '' : 'on'}">בלי למכור נדל״ן</button><button type="button" data-v="1" class="${S.sellRE ? 'on' : ''}">מוכרים נדל״ן להשקעה</button></div>
+      <small class="muted">דירת המגורים לא נמכרת אף פעם.</small></div>`;
   }
 
   let body = '';
@@ -278,7 +282,9 @@ function renderForecast() {
           <div class="kpi fb"><div class="k-l">קצבה משוערת מגיל ${P}</div><div class="k-v">${hasAnn ? moneyHtml(show.annuity) : '—'}</div><div class="k-s">${hasAnn ? `מקדם ${S.coef}, לפני מס` : 'אין פנסיה בחישוב'}</div></div>
         </div>
         <section class="card">${sumLine}
-          ${rows.some(x => isHome(x.a)) ? `<p class="hint">🏠 דירה למגורים לא נספרת כאן, כי עדיין צריך איפה לגור. נדל״ן להשקעה נספר כנכס שאפשר לממש. את סוג הנכס משנים בעריכת החשבון.</p>` : ''}</section>
+          ${rows.some(x => x.a.type === 'realestate') ? `<p class="hint">🏠 ${S.sellRE
+            ? `דירת המגורים לא נמכרת ולא נספרת. נדל״ן להשקעה${rows.some(x => x.a.type === 'realestate' && !isHome(x.a)) ? '' : ' (אין כרגע)'} נספר ככסף שאפשר לחיות ממנו, כאילו מוכרים אותו.`
+            : 'בלי למכור נדל״ן: הדירות לא נספרות ככסף לחיות ממנו. אם יש שכר דירה מנכס להשקעה, הוא ימשיך להיכנס, ואפשר להוריד אותו מההוצאה החודשית.'} את סוג הנכס (דירה למגורים או להשקעה) משנים בעריכת החשבון.</p>` : ''}</section>
         <section class="card"><h3>החסכונות לאורך החיים <small class="muted">בשקלים של היום</small></h3><div id="fcFire" class="ch"></div><div id="fcFireX"></div></section>
         <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>מחזיק עד גיל ${S.lastAge}?</th></tr></thead><tbody>
           ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret)}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
@@ -289,7 +295,7 @@ function renderForecast() {
         for (let y = 0; y <= H; y++) {
           labels.push(String(age + y)); titles.push(`גיל ${age + y} · שנת ${nowY + y}`);
           if (y < show.k) {
-            liqV.push(sum(rows.filter(x => !isAnnuity(x.a) && !isHome(x.a)).map(x => yv(x, y, sc))) / defl(y));
+            liqV.push(sum(rows.filter(x => livesOn(x.a, S)).map(x => yv(x, y, sc))) / defl(y));
             penV.push(sum(rows.filter(x => isAnnuity(x.a)).map(x => yv(x, y, sc))) / defl(y));
           } else {
             const p = show.path[y - show.k];
@@ -328,7 +334,7 @@ function renderForecast() {
       <li>הבסיס הוא היתרה האחרונה שהוזנה לכל חשבון, והתשואה המשוערת שלו (לפני אינפלציה, אחרי דמי ניהול מהצבירה).</li>
       <li>ההפקדה החודשית היא כברירת מחדל הממוצע של 12 החודשים האחרונים, והיא עולה כל שנה בגובה האינפלציה. דמי ניהול מהפקדה, אם הוזנו, יורדים ממנה.</li>
       <li>התשואה בפועל משתנה משנה לשנה. כאן היא קבועה, ולכן התוצאה היא קו ממוצע.</li>
-      <li>במצב 2: מהפרישה כבר אין הפקדות. ההוצאה קבועה בשקלים של היום. כספי פנסיה וגמל לקצבה הופכים לקצבה בגיל קבלת הפנסיה (צבירה ÷ ${S.coef}). דירה למגורים לא נספרת; נדל״ן להשקעה נספר כנכס שאפשר לממש (אפשר להוציא אותו עם הסימון ״נדל״ן״).</li>
+      <li>במצב 2: מהפרישה כבר אין הפקדות. ההוצאה קבועה בשקלים של היום. כספי פנסיה וגמל לקצבה הופכים לקצבה בגיל קבלת הפנסיה (צבירה ÷ ${S.coef}). נדל״ן לא נמכר כברירת מחדל. אפשר לבחור ״מוכרים נדל״ן להשקעה״, ואז הוא נספר ככסף לחיות ממנו. דירת המגורים לא נספרת אף פעם.</li>
       <li>לא מחושב מס (רווח הון, מס על קצבה). זו הערכה לתכנון, לא ייעוץ השקעות.</li></ul></details>`;
   if (el._draw) { el._draw(); el._draw = null; }
 
@@ -343,6 +349,7 @@ function renderForecast() {
   num('#fcGoal', (s, v) => { if (isNum(v) && v > 0) saveFc({ goal: v }); else { toast('יעד לא תקין'); renderForecast(); } });
   num('#fcSpend', (s, v) => { if (s === '') saveFc({ spend: null }); else if (isNum(v) && v > 0) saveFc({ spend: v }); else { toast('הוצאה לא תקינה'); renderForecast(); } });
   if ($('#fcSwr')) $('#fcSwr').onchange = e => saveFc({ swr: +e.target.value });
+  if ($('#fcSellRE')) $('#fcSellRE').onclick = e => { const b = e.target.closest('[data-v]'); if (b && (b.dataset.v === '1') !== S.sellRE) saveFc({ sellRE: b.dataset.v === '1' }); };
   if ($('#fcSpendSteps')) $('#fcSpendSteps').onclick = e => {
     const b = e.target.closest('[data-p]'); if (!b) return;
     const p = +b.dataset.p; saveFc({ spend: p === 0 ? null : Math.round(avgSpend * (1 + p / 100)) });
