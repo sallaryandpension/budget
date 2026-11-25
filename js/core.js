@@ -121,21 +121,31 @@ const REPORTS = {
   },
 };
 
+/* fees: has management fees; split: deposit rates from salary; term: interest rate and maturity date */
 const INV_TYPES = {
   pension: { name: 'קרן פנסיה', short: 'פנסיה', color: '#2f6f5e', source: 'payroll',
-    subs: ['קרן פנסיה מקיפה', 'קרן פנסיה כללית (משלימה)', 'ביטוח מנהלים'], split: true,
+    subs: ['קרן פנסיה מקיפה', 'קרן פנסיה כללית (משלימה)', 'ביטוח מנהלים'], fees: true, split: true,
     hint: 'חיסכון לגיל פרישה. נמשך כקצבה חודשית.' },
   hish: { name: 'קרן השתלמות', short: 'השתלמות', color: '#7a52b3', source: 'payroll',
-    subs: ['שכיר', 'עצמאי'], split: true,
+    subs: ['שכיר', 'עצמאי'], fees: true, split: true,
     hint: 'חיסכון לטווח בינוני, בדרך כלל נזיל אחרי 6 שנים.' },
   gemel: { name: 'קופת גמל', short: 'גמל', color: '#c0623b', source: 'payroll',
-    subs: ['גמל לתגמולים ופיצויים', 'גמל להשקעה', 'חיסכון לכל ילד'], split: true,
+    subs: ['גמל לתגמולים ופיצויים', 'גמל להשקעה', 'חיסכון לכל ילד'], fees: true, split: true,
     hint: 'גמל לתגמולים, גמל להשקעה או חיסכון לכל ילד.' },
+  policy: { name: 'פוליסת חיסכון', short: 'פוליסה', color: '#b5487a', source: 'bank',
+    subs: ['פוליסת חיסכון', 'ביטוח חיים משולב חיסכון'], fees: true, split: false,
+    hint: 'חיסכון בחברת ביטוח. נזיל בכל עת, מס על הרווח במשיכה.' },
   broker: { name: 'ברוקר / תיק השקעות', short: 'ברוקר', color: '#3b6fb6', source: 'bank',
-    subs: ['ברוקר ישראלי', 'ברוקר זר'], split: false,
-    hint: 'חשבון מסחר פרטי. אפשר להוסיף כמה ברוקרים שרוצים.' },
+    subs: ['ברוקר ישראלי', 'ברוקר זר', 'תיק ניירות ערך בבנק'], split: false,
+    hint: 'חשבון מסחר פרטי או תיק בבנק. אפשר להוסיף כמה שרוצים.' },
+  deposit: { name: 'פיקדון / חיסכון בבנק', short: 'פיקדון', color: '#2a8c9c', source: 'bank',
+    subs: ['פיקדון שקלי', 'פיקדון צמוד מדד', 'פיקדון במט״ח', 'תוכנית חיסכון', 'פק״מ'], split: false, term: true,
+    hint: 'כסף בבנק לתקופה קבועה, בריבית. נזיל בתום התקופה.' },
+  other: { name: 'השקעה אחרת', short: 'אחר', color: '#8a7a55', source: 'bank',
+    subs: ['קרן כספית', 'נדל״ן', 'קריפטו', 'מט״ח / מזומן', 'זהב', 'הלוואה שנתתי', 'אחר'], split: false,
+    hint: 'קרן כספית, נדל״ן, קריפטו, זהב וכל השקעה אחרת.' },
 };
-const INV_ORDER = ['pension', 'hish', 'gemel', 'broker'];
+const INV_ORDER = ['pension', 'hish', 'gemel', 'policy', 'broker', 'deposit', 'other'];
 const SOURCES = { payroll: 'מהמשכורת', bank: 'מחשבון הבנק' };
 
 /* ---------- Data model ---------- */

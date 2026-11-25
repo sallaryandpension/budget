@@ -18,6 +18,8 @@ let data = normalize(readJSON(LS.data));
 let pending = Array.isArray(readJSON(LS.pending)) ? readJSON(LS.pending) : [];
 let ui = Object.assign({ year: {}, flip: {}, invMode: 'd', homePeriod: '12', homeSkipCur: false, lastBackup: null },
   readJSON(LS.ui) || {});
+// One-time switch (Nov 2026): months as rows and categories as columns became the default layout.
+if (ui.layout !== 2) { ui.flip = {}; ui.layout = 2; localStorage.setItem(LS.ui, JSON.stringify(ui)); }
 let busy = false, etag = null, pumpTimer = null, retryTimer = null, syncState = 'local', syncMsg = '';
 
 const persistLocal = () => localStorage.setItem(LS.data, JSON.stringify(data));

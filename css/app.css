@@ -227,6 +227,14 @@ table.stat { width: 100%; border-collapse: collapse; font-size: 14px; }
 .dlg-text p { margin: 6px 0; }
 .dlg-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 .dlg-btns .btn { flex: 1; }
+/* ---------- Balance update ---------- */
+.balist { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.balrow { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-inline-start: 4px solid var(--c); border-radius: 10px; }
+.balrow .bn { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.balrow .bn small { color: var(--muted); font-size: 12px; }
+.balrow .unit { width: 170px; flex: none; }
+.balrow input.bad { outline: 2px solid var(--danger); }
+
 /* ---------- Install steps ---------- */
 .steps ol { padding-inline-start: 22px; margin: 10px 0; }
 .steps li { margin: 8px 0; line-height: 1.6; }

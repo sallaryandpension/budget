@@ -302,14 +302,16 @@ function guessTarget(sheetName, name) {
   if (/הפקד|השקע/.test(sheetName)) return 'dep';
   if (/הכנס/.test(sheetName)) return 'income';
   if (/הוצא/.test(sheetName)) return 'expenses';
-  if (/גמל|השתלמות|פנסי|השקעה|ברוקר|תיק השקעות|מניות/.test(name)) return 'dep';
+  if (/גמל|השתלמות|פנסי|השקעה|ברוקר|תיק השקעות|מניות|פיקדון|פקדון|פק"מ|פק״מ|פוליס|קריפטו|ביטקוין|קרן כספית/.test(name)) return 'dep';
   if (/משכורת|שכר|הכנסה|החזר|קצב|מענק|בונוס|דיבידנד|ריבית/.test(name)) return 'income';
   return 'expenses';
 }
 function guessType(name, typeText) {
   for (const t of INV_ORDER) if (typeText && (typeText === INV_TYPES[t].name || typeText === INV_TYPES[t].short)) return t;
   const s = name + ' ' + (typeText || '');
-  return /פנסי|מנהלים/.test(s) ? 'pension' : /השתלמות/.test(s) ? 'hish' : /גמל/.test(s) ? 'gemel' : 'broker';
+  return /פנסי|מנהלים/.test(s) ? 'pension' : /השתלמות/.test(s) ? 'hish' : /גמל/.test(s) ? 'gemel'
+    : /פוליס/.test(s) ? 'policy' : /פיקדון|פקדון|פק"מ|פק״מ|חיסכון בבנק|תוכנית חיסכון/.test(s) ? 'deposit'
+    : /קריפטו|ביטקוין|נדל|זהב|קרן כספית|מט"ח|מט״ח/.test(s) ? 'other' : 'broker';
 }
 function existingFor(target) {
   if (target === 'expenses' || target === 'income') return data[target].cats.map(c => ({ id: c.id, name: c.name }));

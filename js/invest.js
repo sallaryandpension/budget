@@ -47,6 +47,7 @@ function renderInvest() {
     <div class="pagehead"><h2>📈 דו״ח השקעות</h2>
       <div class="tools">
         <button type="button" class="btn small" data-a="add">+ חשבון</button>
+        <button type="button" class="btn small" data-a="bal" title="להזין את היתרה הנוכחית של כל החשבונות בבת אחת">💰 עדכון יתרות</button>
         <button type="button" class="btn ghost small" data-a="flip">⇄ ${spec.flip ? 'חודשים בעמודות' : 'חודשים בשורות'}</button>
         <button type="button" class="btn ghost small" data-a="xlout" title="כל הדוחות בקובץ אקסל אחד">⬇ אקסל</button>
         <button type="button" class="btn ghost small" data-a="xlin" title="ייבוא מקובץ אקסל או CSV">⬆ ייבוא</button>
@@ -70,6 +71,7 @@ function renderInvest() {
     ui.invMode = b.dataset.f; saveUi(); renderView('invest');
   };
   el.querySelector('[data-a="add"]').onclick = () => openAccount(null);
+  el.querySelector('[data-a="bal"]').onclick = () => openBalances();
   el.querySelector('[data-a="flip"]').onclick = () => { ui.flip.invest = !monthsAsRows('invest'); saveUi(); renderView('invest'); };
   el.querySelector('[data-a="xlout"]').onclick = exportExcel;
   el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
@@ -93,12 +95,56 @@ function accCard(a) {
       ${line('הפקדות', SOURCES[a.source] || '')}
       ${line('דמי ניהול', fees)}
       ${line('שיעורי הפקדה', split)}
+      ${line('ריבית שנתית', isNum(a.rate) ? pct(a.rate) : '')}
+      ${line('פירעון', a.maturity ? monthNum(a.maturity) : '')}
       ${line('יתרה אחרונה', lb ? `${moneyHtml(lb.v)} <small class="muted">(${monthNum(lb.m)})</small>` : '')}
       ${a.active === false ? '<div><span>מצב</span>סגור</div>' : ''}
     </div>
     ${a.note ? `<div class="acc-note">${esc(a.note)}</div>` : ''}
     <button type="button" class="btn ghost small" data-edit="${a.id}">✎ עריכה</button>
   </div>`;
+}
+
+const NAME_HINT = { broker: 'למשל: IBI, Interactive Brokers', deposit: 'למשל: פיקדון לאומי 12 חודשים', policy: 'למשל: פוליסת חיסכון הראל', other: 'למשל: קרן כספית, דירה להשקעה, ביטקוין' };
+const PROVIDER_LABEL = { broker: 'בית השקעות / ברוקר', deposit: 'בנק', policy: 'חברת ביטוח', other: 'איפה מוחזק' };
+const TRACK_HINT = { broker: 'למשל: מדדים', deposit: 'למשל: 12 חודשים, צמוד, יציאה ביום 90', other: '' };
+
+/* Update all balances at once, for one month (default: this month). This is how the current
+   value of every account is entered: without it the gains cannot be known. */
+function openBalances(month) {
+  let m = month || curMonth();
+  const accs = sortedAccs().filter(a => a.active !== false);
+  const draw = () => {
+    const sh = openSheet(`<div class="head"><h3>💰 עדכון יתרות</h3><button type="button" class="x" data-close aria-label="סגירה">✕</button></div>
+      <p class="muted">מזינים את השווי של כל חשבון, לפי האפליקציה או הדוח של הגוף המנהל. אין צורך למלא את כולם: שדה ריק נשאר כמו שהוא.
+        את כל הקופות (פנסיה, השתלמות וגמל) אפשר לראות במקום אחד ב<a href="https://www.swiftness.co.il/savers/" target="_blank" rel="noopener">מסלקה הפנסיונית</a>.</p>
+      <label for="balMonth">נכון לסוף החודש</label>
+      <input type="month" id="balMonth" value="${m}" style="max-width:200px">
+      <div class="balist">${accs.map(a => {
+        const own = invCell(m, a.id)?.b, last = lastBal(a.id, m);
+        return `<div class="balrow" style="--c:${INV_TYPES[a.type].color}">
+          <div class="bn"><b>${esc(a.name)}</b><small>${INV_TYPES[a.type].short}${last && !isNum(own) ? ` · אחרונה: ${money(last.v)} (${monthNum(last.m)})` : ''}</small></div>
+          <div class="unit"><input type="text" inputmode="decimal" data-acc="${a.id}" value="${cellText(own)}" placeholder="${last && !isNum(own) ? NF2.format(last.v) : '0'}"><span>₪</span></div></div>`;
+      }).join('')}</div>
+      <div class="sheet-actions"><button type="button" class="btn ghost" data-close>ביטול</button><button type="button" class="btn" id="balSave">שמירה</button></div>`);
+    $('#balMonth').onchange = e => { if (validMonth(e.target.value)) { m = e.target.value; draw(); } };
+    $('#balSave').onclick = () => {
+      const list = []; let bad = 0;
+      sh.querySelectorAll('[data-acc]').forEach(inp => {
+        if (inp.value.trim() === '') return;
+        const v = parseNum(inp.value);
+        if (Number.isNaN(v)) { bad++; inp.classList.add('bad'); return; }
+        if (invCell(m, inp.dataset.acc)?.b !== v) list.push([m, inp.dataset.acc, 'b', v]);
+      });
+      if (bad) { toast('יש ערך לא תקין'); return; }
+      if (list.length) change({ t: 'inv', list });
+      closeSheet();
+      toast(list.length ? `עודכנו ${list.length} יתרות ל${monthName(m)}` : 'לא היה שינוי');
+    };
+    const first = sh.querySelector('[data-acc]'); first && first.focus();
+  };
+  if (!accs.length) { toast('עדיין אין חשבונות השקעה'); return; }
+  draw();
 }
 
 /* Add / edit account */
@@ -114,15 +160,15 @@ function openAccount(id, presetType) {
       <label>סוג</label>
       <div class="seg wrap" id="accType">${INV_ORDER.map(t => `<button type="button" data-t="${t}" class="${t === f.type ? 'on' : ''}">${INV_TYPES[t].name}</button>`).join('')}</div>
       <label for="aName">שם החשבון *</label>
-      <input id="aName" value="${esc(f.name || '')}" maxlength="60" placeholder="${f.type === 'broker' ? 'למשל: IBI, Interactive Brokers' : 'למשל: ' + T.short + ' מור – מסלול מניות'}">
+      <input id="aName" value="${esc(f.name || '')}" maxlength="60" placeholder="${NAME_HINT[f.type] || 'למשל: ' + T.short + ' מור – מסלול מניות'}">
       <div class="row">
         <div><label for="aSub">סוג מוצר</label><select id="aSub">${T.subs.map(s => `<option ${s === f.sub ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></div>
         <div><label for="aOwner">של מי</label><input id="aOwner" value="${esc(f.owner || '')}" maxlength="30" list="ownersList" placeholder="למשל: אני"></div>
       </div>
       <datalist id="ownersList">${[...new Set(data.invest.accs.map(a => a.owner).filter(Boolean))].map(o => `<option value="${esc(o)}">`).join('')}</datalist>
       <div class="row">
-        <div><label for="aProv">${f.type === 'broker' ? 'בית השקעות / ברוקר' : 'גוף מנהל'}</label><input id="aProv" value="${esc(f.provider || '')}" maxlength="40"></div>
-        <div><label for="aTrack">מסלול השקעה</label><input id="aTrack" value="${esc(f.track || '')}" maxlength="40" placeholder="${f.type === 'broker' ? 'למשל: מדדים' : 'למשל: מניות, S&P 500, תלוי גיל'}"></div>
+        <div><label for="aProv">${PROVIDER_LABEL[f.type] || 'גוף מנהל'}</label><input id="aProv" value="${esc(f.provider || '')}" maxlength="40"></div>
+        <div><label for="aTrack">${T.term ? 'תנאים' : 'מסלול השקעה'}</label><input id="aTrack" value="${esc(f.track || '')}" maxlength="40" placeholder="${TRACK_HINT[f.type] || 'למשל: מניות, S&P 500, תלוי גיל'}"></div>
       </div>
       <div class="row">
         <div><label for="aOpen">חודש פתיחה</label><input type="month" id="aOpen" value="${esc(f.open || '')}"></div>
@@ -131,14 +177,18 @@ function openAccount(id, presetType) {
       </div>
       ${f.type === 'hish' ? '<p class="hint">חודש הפתיחה קובע מתי הקרן נזילה (בדרך כלל אחרי 6 שנים).</p>' : ''}
       <p class="hint">${f.source === 'payroll' ? 'ההפקדה יורדת מהמשכורת ברוטו, ולכן היא לא חלק מהנטו שבדו״ח ההכנסות.' : 'ההפקדה יוצאת מחשבון הבנק, כלומר מהכסף שנשאר אחרי ההוצאות.'}</p>
-      ${f.type !== 'broker' ? `
+      ${T.fees ? `
         <label>דמי ניהול</label>
-        <div class="row"><div><small class="muted">מההפקדה</small>${num('feeDep', '0')}</div><div><small class="muted">מהצבירה (שנתי)</small>${num('feeBal', '0')}</div></div>
-        ${T.split ? `<label>שיעורי הפקדה מהשכר (לא חובה)</label>
+        <div class="row"><div><small class="muted">מההפקדה</small>${num('feeDep', '0')}</div><div><small class="muted">מהצבירה (שנתי)</small>${num('feeBal', '0')}</div></div>` : ''}
+      ${T.split ? `<label>שיעורי הפקדה מהשכר (לא חובה)</label>
         <div class="row three"><div><small class="muted">עובד</small>${num('splitEmp', f.type === 'hish' ? '2.5' : '6')}</div>
           <div><small class="muted">מעסיק</small>${num('splitEr', f.type === 'hish' ? '7.5' : '6.5')}</div>
           <div><small class="muted">פיצויים</small>${num('splitSev', f.type === 'hish' ? '' : '8.33')}</div></div>
-        <p class="hint">משמש בהמשך לחישוב הטבות המס ולתחזיות. בטבלה רושמים את סך ההפקדה החודשית.</p>` : ''}` : ''}
+        <p class="hint">משמש בהמשך לחישוב הטבות המס ולתחזיות. בטבלה רושמים את סך ההפקדה החודשית.</p>` : ''}
+      ${T.term ? `<div class="row">
+          <div><label>ריבית שנתית</label>${num('rate', 'למשל 4')}</div>
+          <div><label for="aMat">מועד פירעון</label><input type="month" id="aMat" value="${esc(f.maturity || '')}"></div></div>
+        <p class="hint">את הקרן שהופקדה רושמים כהפקדה בחודש הפתיחה, ואת השווי (קרן + ריבית) רושמים ביתרות.</p>` : ''}
       <label for="aNote">הערות</label>
       <textarea id="aNote" rows="2" maxlength="300">${esc(f.note || '')}</textarea>
       ${acc ? `<label class="chk"><input type="checkbox" id="aActive" ${f.active !== false ? 'checked' : ''}> החשבון פעיל (חשבון סגור מוסתר מהטבלה, והנתונים שלו נשמרים)</label>` : ''}
@@ -151,6 +201,7 @@ function openAccount(id, presetType) {
       f.provider = $('#aProv').value.trim(); f.track = $('#aTrack').value.trim();
       f.open = validMonth($('#aOpen').value) ? $('#aOpen').value : '';
       f.note = $('#aNote').value.trim();
+      if ($('#aMat')) f.maturity = validMonth($('#aMat').value) ? $('#aMat').value : '';
       sh.querySelectorAll('[data-k]').forEach(i => { const v = parseNum(i.value); f[i.dataset.k] = isNum(v) ? v : null; });
       if ($('#aActive')) f.active = $('#aActive').checked;
     };
@@ -168,7 +219,10 @@ function openAccount(id, presetType) {
       read();
       if (!f.name) { $('#aName').focus(); toast('צריך לתת שם לחשבון'); return; }
       if (!f.sub) f.sub = INV_TYPES[f.type].subs[0];
-      if (f.type === 'broker') { f.feeDep = f.feeBal = f.splitEmp = f.splitEr = f.splitSev = null; }
+      const T = INV_TYPES[f.type];               // drop fields that do not belong to this type
+      if (!T.fees) f.feeDep = f.feeBal = null;
+      if (!T.split) f.splitEmp = f.splitEr = f.splitSev = null;
+      if (!T.term) { f.rate = null; f.maturity = ''; }
       if (acc) { const { id: _, ...patch } = f; change({ t: 'accSet', id: acc.id, patch }); toast('נשמר'); }
       else { change({ t: 'accAdd', acc: Object.assign({ id: uid() }, f) }); toast('החשבון נוסף'); }
       closeSheet();
