@@ -1,12 +1,13 @@
 "use strict";
 /* main.js: tabs (hash routing), start-up, background refresh, service worker. */
-const APP_VERSION = 9;   // keep in step with the ?v= in index.html and CACHE in sw.js
+const APP_VERSION = 10;   // keep in step with the ?v= in index.html and CACHE in sw.js
 
 const VIEWS = {
   home: renderHome,
   expenses: () => renderReport('expenses'),
   income: () => renderReport('income'),
   invest: renderInvest,
+  analysis: renderAnalysis,
   settings: renderSettings,
 };
 let tab = 'home';

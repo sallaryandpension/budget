@@ -5,14 +5,14 @@ function periodOptions() {
   const ys = yearsList().slice().reverse();
   return [['12', '12 החודשים האחרונים'], ...ys.map(y => [y, 'שנת ' + y]), ['all', 'כל התקופה']];
 }
-function periodMonths(p) {
+function periodMonths(p, skipCur = ui.homeSkipCur) {
   const all = allMonths(), cur = curMonth();
   if (p === '12') {
-    const end = ui.homeSkipCur ? shiftMonth(cur, -1) : cur, from = shiftMonth(end, -11);
+    const end = skipCur ? shiftMonth(cur, -1) : cur, from = shiftMonth(end, -11);
     return all.filter(m => m >= from && m <= end);
   }
   const ms = p === 'all' ? all : all.filter(m => m.startsWith(p));
-  return ui.homeSkipCur ? ms.filter(m => m !== cur) : ms;
+  return skipCur ? ms.filter(m => m !== cur) : ms;
 }
 
 /* Average per month = total ÷ number of months that have any data in that report. */
@@ -32,7 +32,7 @@ function invStats(ms) {
   const rows = sortedAccs().map(a => {
     const dep = sum(ms.map(m => invCell(m, a.id)?.d));
     const end = last ? lastBal(a.id, last) : null;
-    const g = periodGain(a.id, ms);
+    const g = tracksGain(a) ? periodGain(a.id, ms) : null;
     bySource[a.source === 'bank' ? 'bank' : 'payroll'] += dep;
     const t = byType[a.type] ||= { dep: 0, end: 0, gain: 0, hasEnd: false };
     t.dep += dep; if (end) { t.end += end.v; t.hasEnd = true; } if (g) t.gain += g.gain;

@@ -121,33 +121,34 @@ const REPORTS = {
   },
 };
 
-/* fees: has management fees; split: deposit rates from salary; term: interest rate and maturity date */
+/* color: a CSS variable (css/app.css) from the validated chart palette, light and dark.
+   fees: has management fees; split: deposit rates from salary; term: interest rate and maturity date */
 const INV_TYPES = {
-  pension: { name: 'קרן פנסיה', short: 'פנסיה', color: '#2f6f5e', source: 'payroll',
+  pension: { name: 'קרן פנסיה', short: 'פנסיה', color: 'var(--t-pension)', source: 'payroll',
     subs: ['קרן פנסיה מקיפה', 'קרן פנסיה כללית (משלימה)', 'ביטוח מנהלים'], fees: true, split: true,
     hint: 'חיסכון לגיל פרישה. נמשך כקצבה חודשית.' },
-  hish: { name: 'קרן השתלמות', short: 'השתלמות', color: '#7a52b3', source: 'payroll',
+  hish: { name: 'קרן השתלמות', short: 'השתלמות', color: 'var(--t-hish)', source: 'payroll',
     subs: ['שכיר', 'עצמאי'], fees: true, split: true,
     hint: 'חיסכון לטווח בינוני, בדרך כלל נזיל אחרי 6 שנים.' },
-  gemel: { name: 'קופת גמל', short: 'גמל', color: '#c0623b', source: 'payroll',
+  gemel: { name: 'קופת גמל', short: 'גמל', color: 'var(--t-gemel)', source: 'payroll',
     subs: ['גמל לתגמולים ופיצויים', 'גמל להשקעה', 'חיסכון לכל ילד'], fees: true, split: true,
     hint: 'גמל לתגמולים, גמל להשקעה או חיסכון לכל ילד.' },
-  policy: { name: 'פוליסת חיסכון', short: 'פוליסה', color: '#b5487a', source: 'bank',
+  policy: { name: 'פוליסת חיסכון', short: 'פוליסה', color: 'var(--t-policy)', source: 'bank',
     subs: ['פוליסת חיסכון', 'ביטוח חיים משולב חיסכון'], fees: true, split: false,
     hint: 'חיסכון בחברת ביטוח. נזיל בכל עת, מס על הרווח במשיכה.' },
-  broker: { name: 'ברוקר / תיק השקעות', short: 'ברוקר', color: '#3b6fb6', source: 'bank',
+  broker: { name: 'ברוקר / תיק השקעות', short: 'ברוקר', color: 'var(--t-broker)', source: 'bank',
     subs: ['ברוקר ישראלי', 'ברוקר זר', 'תיק ניירות ערך בבנק', 'תיק מנוהל', 'קרנות נאמנות'], split: false,
     hint: 'חשבון מסחר פרטי או תיק בבנק. אפשר להוסיף כמה שרוצים.' },
-  deposit: { name: 'פיקדון / חיסכון בבנק', short: 'פיקדון', color: '#2a8c9c', source: 'bank',
+  deposit: { name: 'פיקדון / חיסכון בבנק', short: 'פיקדון', color: 'var(--t-deposit)', source: 'bank',
     subs: ['פיקדון שקלי', 'פיקדון צמוד מדד', 'פיקדון במט״ח', 'תוכנית חיסכון', 'פק״מ', 'חשבון חיסכון בריבית'], split: false, term: true,
     hint: 'כסף בבנק לתקופה קבועה, בריבית. נזיל בתום התקופה.' },
-  cash: { name: 'עו״ש ומזומן', short: 'עו״ש', color: '#c9a227', source: 'bank',
+  cash: { name: 'עו״ש ומזומן', short: 'עו״ש', color: 'var(--t-cash)', source: 'bank',
     subs: ['עו״ש', 'עו״ש במט״ח', 'מזומן'], split: false,
     hint: 'הכסף בחשבון העו״ש ובמזומן. מספיק לעדכן את היתרה מדי פעם.' },
-  realestate: { name: 'נדל״ן', short: 'נדל״ן', color: '#a0522d', source: 'bank',
+  realestate: { name: 'נדל״ן', short: 'נדל״ן', color: 'var(--t-realestate)', source: 'bank',
     subs: ['דירה למגורים', 'דירה להשקעה', 'קרקע', 'נדל״ן בחו״ל', 'קרן נדל״ן / ריט'], split: false,
     hint: 'דירה, קרקע או קרן נדל״ן. ביתרה רושמים שווי משוער, ובהפקדות את מה שהושקע.' },
-  other: { name: 'השקעה אחרת', short: 'אחר', color: '#7d7d7d', source: 'bank',
+  other: { name: 'השקעה אחרת', short: 'אחר', color: 'var(--t-other)', source: 'bank',
     subs: ['קרן כספית', 'מניות / אופציות מהעבודה (RSU)', 'קריפטו', 'זהב', 'מט״ח', 'הלוואות P2P', 'הלוואה שנתתי', 'אחר'], split: false,
     hint: 'קרן כספית, RSU, קריפטו, זהב וכל השקעה אחרת.' },
 };
@@ -314,6 +315,8 @@ function lastBal(id, m) {           // last balance entered at or before month m
   }
   return bm ? { m: bm, v: bv } : null;
 }
+/* A checking account's balance moves with spending, not with returns: it has no "gain". */
+const tracksGain = a => a.type !== 'cash';
 /* Gain in a period = end balance − start balance − deposits in between.
    Start = the last balance before the period (or the first one inside it). */
 function periodGain(id, ms) {

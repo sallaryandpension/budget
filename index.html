@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="css/app.css?v=9">
+<link rel="stylesheet" href="css/app.css?v=10">
 </head>
 <body>
 <header class="top">
@@ -27,6 +27,7 @@
     <a href="#expenses" data-tab="expenses">🧾 הוצאות</a>
     <a href="#income" data-tab="income">💼 הכנסות</a>
     <a href="#invest" data-tab="invest">📈 השקעות</a>
+    <a href="#analysis" data-tab="analysis">📊 ניתוח</a>
     <a href="#settings" data-tab="settings">⚙️ הגדרות</a>
   </nav>
 </header>
@@ -36,6 +37,7 @@
   <section id="view-expenses" class="view hidden"></section>
   <section id="view-income" class="view hidden"></section>
   <section id="view-invest" class="view hidden"></section>
+  <section id="view-analysis" class="view hidden"></section>
   <section id="view-settings" class="view hidden"></section>
 </main>
 
@@ -44,15 +46,17 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div id="updateBar" class="update-bar hidden" role="status">✨ יש גרסה חדשה של האפליקציה <button type="button" class="btn small" id="updateBtn">עדכון עכשיו</button></div>
 
-<script src="js/core.js?v=9"></script>
-<script src="js/sync.js?v=9"></script>
-<script src="js/ui.js?v=9"></script>
-<script src="js/grid.js?v=9"></script>
-<script src="js/invest.js?v=9"></script>
-<script src="js/home.js?v=9"></script>
-<script src="js/settings.js?v=9"></script>
-<script src="js/excel.js?v=9"></script>
-<script src="js/install.js?v=9"></script>
-<script src="js/main.js?v=9"></script>
+<script src="js/core.js?v=10"></script>
+<script src="js/sync.js?v=10"></script>
+<script src="js/ui.js?v=10"></script>
+<script src="js/grid.js?v=10"></script>
+<script src="js/invest.js?v=10"></script>
+<script src="js/home.js?v=10"></script>
+<script src="js/charts.js?v=10"></script>
+<script src="js/analysis.js?v=10"></script>
+<script src="js/settings.js?v=10"></script>
+<script src="js/excel.js?v=10"></script>
+<script src="js/install.js?v=10"></script>
+<script src="js/main.js?v=10"></script>
 </body>
 </html>
