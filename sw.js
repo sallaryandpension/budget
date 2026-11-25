@@ -1,9 +1,9 @@
 // Service worker: lets the app open without internet (showing the last saved data).
 // App files are always taken from the network first, so updates arrive immediately.
 // Requests to api.github.com (the data itself) are never cached here.
-const CACHE = 'budget-v10';
+const CACHE = 'budget-v11';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png',
-  './css/app.css?v=10', './js/core.js?v=10', './js/sync.js?v=10', './js/ui.js?v=10', './js/grid.js?v=10', './js/invest.js?v=10', './js/home.js?v=10', './js/charts.js?v=10', './js/analysis.js?v=10','./js/settings.js?v=10', './js/excel.js?v=10', './js/install.js?v=10', './js/main.js?v=10'];
+  './css/app.css?v=11', './js/core.js?v=11', './js/sync.js?v=11', './js/ui.js?v=11', './js/grid.js?v=11', './js/invest.js?v=11', './js/home.js?v=11', './js/charts.js?v=11', './js/analysis.js?v=11', './js/forecast.js?v=11','./js/settings.js?v=11', './js/excel.js?v=11', './js/install.js?v=11', './js/main.js?v=11'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));

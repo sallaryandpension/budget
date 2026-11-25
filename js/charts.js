@@ -139,6 +139,68 @@ function columnChart(host, { cats, labels, titles, series, stacked = false, pola
   svg.addEventListener('pointerleave', () => { bands.querySelectorAll('.on').forEach(x => x.classList.remove('on')); hideTip(host); });
 }
 
+/* Lines over time (2px, round joins), 8px end dots with a 2px surface ring, a crosshair that snaps
+   to the nearest point and one tooltip with every series. End values are labeled only when they do
+   not collide; otherwise the legend and the tooltip carry them. */
+function lineChart(host, { labels, titles, series, height = 230, fmt = money }) {
+  host.classList.add('ch-host');
+  const n = labels.length;
+  const W = Math.max(300, host.clientWidth), padL = 62, padR = 84, padT = 14, axisH = 26;
+  const plotW = W - padL - padR, H = padT + height + axisH;
+  let max = 0, min = 0;
+  for (const s of series) for (const v of s.values) if (isNum(v)) { max = Math.max(max, v); min = Math.min(min, v); }
+  const { lo, hi, ticks } = niceTicks(min, max);
+  const x = i => padL + (n === 1 ? plotW / 2 : i / (n - 1) * plotW);
+  const y = v => padT + (hi - v) / (hi - lo || 1) * height;
+  const svg = svgEl('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img' });
+  const tickText = axisFormatter(ticks);
+  for (const t of ticks) {
+    svg.appendChild(svgEl('line', { x1: padL, x2: padL + plotW, y1: y(t), y2: y(t), class: t === 0 ? 'ch-axis' : 'ch-grid' }));
+    const lab = svgEl('text', { x: padL - 8, y: y(t) + 4, 'text-anchor': 'end', class: 'ch-tick' }); lab.textContent = tickText(t); svg.appendChild(lab);
+  }
+  const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(plotW / 50))));
+  labels.forEach((l, i) => {
+    if (i % every && i !== n - 1) return;
+    if (i !== n - 1 && n - 1 - i < every / 2) return;          // keep the last label clear of its neighbor
+    const t = svgEl('text', { x: x(i), y: padT + height + 17, 'text-anchor': 'middle', class: 'ch-tick' }); t.textContent = l; svg.appendChild(t);
+  });
+  const cross = svgEl('line', { y1: padT, y2: padT + height, class: 'ch-cross', visibility: 'hidden' });
+  svg.appendChild(cross);
+  const dots = [];
+  for (const s of series) {
+    const pts = s.values.map((v, i) => isNum(v) ? `${x(i)},${y(v)}` : null).filter(Boolean);
+    svg.appendChild(svgEl('polyline', { points: pts.join(' '), class: 'ch-line', style: `stroke:${s.color}` }));
+    const li = s.values.map(isNum).lastIndexOf(true);
+    if (li >= 0) svg.appendChild(svgEl('circle', { cx: x(li), cy: y(s.values[li]), r: 4.5, class: 'ch-dot', style: `fill:${s.color}` }));
+    const hd = svgEl('circle', { r: 4.5, class: 'ch-dot', style: `fill:${s.color}`, visibility: 'hidden' }); svg.appendChild(hd); dots.push(hd);
+  }
+  // end labels, only where they do not collide
+  const ends = series.map(s => { const li = s.values.map(isNum).lastIndexOf(true); return li >= 0 ? { v: s.values[li], yy: y(s.values[li]), li } : null; });
+  const ok = ends.every((e, i) => !e || ends.every((f, j) => j === i || !f || Math.abs(e.yy - f.yy) >= 15));
+  if (ok) ends.forEach(e => { if (!e) return; const t = svgEl('text', { x: x(e.li) + 9, y: e.yy + 4, class: 'ch-end' }); t.textContent = compactMoney(e.v); svg.appendChild(t); });
+  const hit = svgEl('rect', { x: padL - 6, y: padT, width: plotW + 12, height, class: 'ch-hit', tabindex: 0,
+    'aria-label': series.map(s => `${s.name}: ${fmt(s.values[n - 1])} ב${titles[n - 1]}`).join(', ') });
+  svg.appendChild(hit);
+  host.replaceChildren(svg);
+  let cur = n - 1;
+  const show = i => {
+    cur = i; cross.setAttribute('x1', x(i)); cross.setAttribute('x2', x(i)); cross.setAttribute('visibility', 'visible');
+    series.forEach((s, j) => { const v = s.values[i]; if (isNum(v)) { dots[j].setAttribute('cx', x(i)); dots[j].setAttribute('cy', y(v)); dots[j].setAttribute('visibility', 'visible'); } });
+    showTip(host, x(i) * host.clientWidth / W, titles[i], series.map(s => ({ name: s.name, value: s.values[i], color: s.color })), fmt);
+  };
+  const hide = () => { cross.setAttribute('visibility', 'hidden'); dots.forEach(d => d.setAttribute('visibility', 'hidden')); hideTip(host); };
+  hit.addEventListener('pointermove', e => {
+    const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width;
+    show(Math.max(0, Math.min(n - 1, Math.round((px - padL) / (plotW / Math.max(1, n - 1))))));
+  });
+  hit.addEventListener('pointerleave', hide);
+  hit.addEventListener('focus', () => show(cur));
+  hit.addEventListener('blur', hide);
+  hit.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); show(Math.max(0, Math.min(n - 1, cur + (e.key === 'ArrowRight' ? 1 : -1)))); }
+  });
+}
+
 /* Ranked horizontal bars, largest first. items: [{ label, value, color?, note? }].
    diverging: bars grow both ways from a center zero line (gains and losses). */
 function rankBars(host, items, { color, diverging = null, fmt = money } = {}) {
