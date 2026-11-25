@@ -234,6 +234,13 @@ table.stat { width: 100%; border-collapse: collapse; font-size: 14px; }
 .balrow .bn small { color: var(--muted); font-size: 12px; }
 .balrow .unit { width: 170px; flex: none; }
 .balrow input.bad { outline: 2px solid var(--danger); }
+.balrow .retpick { width: 170px; flex: none; padding: 7px 8px; font-size: 13.5px; }
+.balrow .retpick + .unit { width: 100px; }
+.retrow { display: flex; align-items: center; gap: 10px; }
+.retrow .unit { width: 120px; flex: none; }
+.chips.small { margin: 8px 0 4px; gap: 5px; }
+.chips.small .chip { font-size: 12.5px; padding: 4px 10px; }
+@media (max-width: 560px) { .balrow { flex-wrap: wrap; } .balrow .retpick { width: auto; flex: 1; } }
 
 /* ---------- Install steps ---------- */
 .steps ol { padding-inline-start: 22px; margin: 10px 0; }

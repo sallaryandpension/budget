@@ -154,6 +154,34 @@ const INV_TYPES = {
 const INV_ORDER = ['pension', 'hish', 'gemel', 'policy', 'broker', 'deposit', 'cash', 'realestate', 'other'];
 const SOURCES = { payroll: 'מהמשכורת', bank: 'מחשבון הבנק' };
 
+/* Estimated yearly return (%, before inflation, after management fees). General long-term
+   assumptions for forecasts, not advice; every account can override them. Real estate is 2%
+   by the user's choice: today's market is far from the strong rises of past years. */
+const RETURN_PRESETS = [
+  ['S&P 500', 8], ['מדד עולמי (MSCI World)', 7], ['מניות ישראל (ת״א 125)', 7], ['מסלול מנייתי', 7],
+  ['מסלול תלוי גיל', 6], ['מסלול כללי', 5], ['אג״ח / מסלול אג״ח', 3.5], ['קרן כספית / פיקדון', 3.5],
+  ['זהב', 4], ['נדל״ן (עליית ערך)', 2], ['עו״ש / מזומן', 0],
+];
+/* The default estimate for an account, from its track name, sub-type and type. null = no sensible default (e.g. crypto). */
+function suggestReturn(a) {
+  const t = `${a.track || ''} ${a.name || ''}`;
+  if (/s&p|500|nasdaq|נאסד"?ק/i.test(t)) return 8;
+  if (/עולמי|world|acwi/i.test(t)) return 7;
+  if (/מניות|מנייתי/.test(t)) return 7;
+  if (/אג"ח|אג״ח|סולידי/.test(t)) return 3.5;
+  if (/כללי/.test(t)) return 5;
+  switch (a.type) {
+    case 'pension': case 'hish': case 'gemel': case 'policy': return 6;
+    case 'broker': return 7;
+    case 'deposit': return isNum(a.rate) ? a.rate : 3.5;
+    case 'cash': return 0;
+    case 'realestate': return 2;
+    case 'other': return { 'קרן כספית': 3.5, 'זהב': 4, 'מט״ח': 0, 'מניות / אופציות מהעבודה (RSU)': 8 }[a.sub] ?? null;
+  }
+  return null;
+}
+const accReturn = a => isNum(a.ret) ? a.ret : suggestReturn(a);   // what the forecasts will use
+
 /* ---------- Data model ---------- */
 function freshData() {
   return {

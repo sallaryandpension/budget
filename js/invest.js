@@ -48,6 +48,7 @@ function renderInvest() {
       <div class="tools">
         <button type="button" class="btn small" data-a="add">+ חשבון</button>
         <button type="button" class="btn small" data-a="bal" title="להזין את היתרה הנוכחית של כל החשבונות בבת אחת">💰 עדכון יתרות</button>
+        <button type="button" class="btn ghost small" data-a="ret" title="התשואה השנתית המשוערת של כל חשבון, לתחזיות">📊 תשואה משוערת</button>
         <button type="button" class="btn ghost small" data-a="flip">⇄ ${spec.flip ? 'חודשים בעמודות' : 'חודשים בשורות'}</button>
         <button type="button" class="btn ghost small" data-a="xlout" title="כל הדוחות בקובץ אקסל אחד">⬇ אקסל</button>
         <button type="button" class="btn ghost small" data-a="xlin" title="ייבוא מקובץ אקסל או CSV">⬆ ייבוא</button>
@@ -72,6 +73,7 @@ function renderInvest() {
   };
   el.querySelector('[data-a="add"]').onclick = () => openAccount(null);
   el.querySelector('[data-a="bal"]').onclick = () => openBalances();
+  el.querySelector('[data-a="ret"]').onclick = () => openReturns();
   el.querySelector('[data-a="flip"]').onclick = () => { ui.flip.invest = !monthsAsRows('invest'); saveUi(); renderView('invest'); };
   el.querySelector('[data-a="xlout"]').onclick = exportExcel;
   el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
@@ -95,6 +97,7 @@ function accCard(a) {
       ${line('הפקדות', SOURCES[a.source] || '')}
       ${line('דמי ניהול', fees)}
       ${line('שיעורי הפקדה', split)}
+      ${line('תשואה משוערת', isNum(accReturn(a)) ? pct(accReturn(a)) + (isNum(a.ret) ? '' : ' <small class="muted">(ברירת מחדל)</small>') : '')}
       ${line('ריבית שנתית', isNum(a.rate) ? pct(a.rate) : '')}
       ${line('פירעון', a.maturity ? monthNum(a.maturity) : '')}
       ${line('יתרה אחרונה', lb ? `${moneyHtml(lb.v)} <small class="muted">(${monthNum(lb.m)})</small>` : '')}
@@ -149,6 +152,43 @@ function openBalances(month) {
   draw();
 }
 
+/* Estimated yearly return of every account in one window. Accounts without their own value
+   show the default for their type and track, so saving once fills them all in. */
+function openReturns() {
+  const accs = sortedAccs().filter(a => a.active !== false);
+  if (!accs.length) { toast('עדיין אין חשבונות השקעה'); return; }
+  const presetOpts = '<option value="">בחירה מהירה…</option>' + RETURN_PRESETS.map(([n, v]) => `<option value="${v}">${esc(n)} (${pct(v)})</option>`).join('');
+  const sh = openSheet(`<div class="head"><h3>📊 תשואה שנתית משוערת</h3><button type="button" class="x" data-close aria-label="סגירה">✕</button></div>
+    <p class="muted">הערכה כללית לטווח ארוך לכל חשבון, לפני אינפלציה ואחרי דמי ניהול. התחזיות ישתמשו בה. הערכים שמולאו מראש הם ברירות מחדל לפי סוג החשבון והמסלול, ואפשר לשנות כל אחד. זו הנחת עבודה ולא המלצת השקעה.</p>
+    <div class="balist">${accs.map(a => {
+      const own = isNum(a.ret), v = own ? a.ret : suggestReturn(a);
+      return `<div class="balrow" style="--c:${INV_TYPES[a.type].color}">
+        <div class="bn"><b>${esc(a.name)}</b><small>${INV_TYPES[a.type].short}${a.track ? ' · ' + esc(a.track) : ''}${!own && isNum(v) ? ' · ברירת מחדל' : ''}</small></div>
+        <select class="retpick" aria-label="בחירה מהירה">${presetOpts}</select>
+        <div class="unit"><input type="text" inputmode="decimal" data-acc="${a.id}" value="${isNum(v) ? v : ''}" placeholder="—"><span>%</span></div></div>`;
+    }).join('')}</div>
+    <p class="hint">נדל״ן מוגדר ל-2% (עליית ערך בלבד), כי השוק היום רחוק מהעליות של השנים הקודמות. בקריפטו אין ברירת מחדל.</p>
+    <div class="sheet-actions"><button type="button" class="btn ghost" data-close>ביטול</button><button type="button" class="btn" id="retSave">שמירה</button></div>`);
+  sh.querySelectorAll('.retpick').forEach(s => s.onchange = () => {
+    if (s.value !== '') s.closest('.balrow').querySelector('[data-acc]').value = s.value;
+    s.value = '';
+  });
+  $('#retSave').onclick = () => {
+    let bad = 0, n = 0;
+    const patches = [];
+    sh.querySelectorAll('[data-acc]').forEach(inp => {
+      const v = inp.value.trim() === '' ? null : parseNum(inp.value);
+      if (Number.isNaN(v)) { bad++; inp.classList.add('bad'); return; }
+      const a = data.invest.accs.find(x => x.id === inp.dataset.acc);
+      if ((a.ret ?? null) !== v) patches.push([a.id, v]);
+    });
+    if (bad) { toast('יש ערך לא תקין'); return; }
+    for (const [id, v] of patches) { change({ t: 'accSet', id, patch: { ret: v } }, { render: false }); n++; }
+    closeSheet(); renderCurrent();
+    toast(n ? `עודכנו ${n} חשבונות` : 'לא היה שינוי');
+  };
+}
+
 /* Add / edit account */
 function openAccount(id, presetType) {
   const acc = id ? data.invest.accs.find(a => a.id === id) : null;
@@ -179,6 +219,11 @@ function openAccount(id, presetType) {
       </div>
       ${f.type === 'hish' ? '<p class="hint">חודש הפתיחה קובע מתי הקרן נזילה (בדרך כלל אחרי 6 שנים).</p>' : ''}
       <p class="hint">${f.source === 'payroll' ? 'ההפקדה יורדת מהמשכורת ברוטו, ולכן היא לא חלק מהנטו שבדו״ח ההכנסות.' : 'ההפקדה יוצאת מחשבון הבנק, כלומר מהכסף שנשאר אחרי ההוצאות.'}</p>
+      <label>תשואה שנתית משוערת</label>
+      <div class="retrow">${num('ret', isNum(suggestReturn(f)) ? String(suggestReturn(f)) : '')}
+        <small class="muted">${isNum(suggestReturn(f)) ? `ריק = ברירת המחדל לסוג הזה (${pct(suggestReturn(f))})` : 'אין ברירת מחדל לסוג הזה'}</small></div>
+      <div class="chips small" id="retChips">${RETURN_PRESETS.map(([n, v]) => `<button type="button" class="chip${f.ret === v ? ' on' : ''}" data-ret="${v}">${esc(n)} ${pct(v)}</button>`).join('')}</div>
+      <p class="hint">הערכה כללית לטווח ארוך, לפני אינפלציה ואחרי דמי ניהול. היא משמשת לתחזיות, ואפשר לשנות אותה בכל זמן.${f.type === 'realestate' ? ' בנדל״ן זו עליית הערך בלבד: שכר דירה נרשם בדו״ח ההכנסות.' : ''}</p>
       ${T.fees ? `
         <label>דמי ניהול</label>
         <div class="row"><div><small class="muted">מההפקדה</small>${num('feeDep', '0')}</div><div><small class="muted">מהצבירה (שנתי)</small>${num('feeBal', '0')}</div></div>` : ''}
@@ -215,6 +260,11 @@ function openAccount(id, presetType) {
     };
     $('#aSub').onchange = () => {
       if (!sourceTouched) { read(); f.source = (f.sub === 'גמל להשקעה' || f.sub === 'עצמאי') ? 'bank' : INV_TYPES[f.type].source; draw(); }
+    };
+    $('#retChips').onclick = e => {
+      const b = e.target.closest('[data-ret]'); if (!b) return;
+      sh.querySelector('[data-k="ret"]').value = b.dataset.ret;
+      sh.querySelectorAll('#retChips .chip').forEach(c => c.classList.toggle('on', c === b));
     };
     $('#aSource').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; read(); f.source = b.dataset.s; sourceTouched = true; draw(); };
     $('#aSave').onclick = () => {
