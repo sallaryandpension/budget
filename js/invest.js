@@ -16,7 +16,7 @@ function investSpec(f) {
     .map(a => ({ id: a.id, name: a.name, badge: typeDot(a.type), inactive: a.active === false,
       sub: [INV_TYPES[a.type].short, a.owner].filter(Boolean).join(' · ') }));
   return {
-    items, months, flip: !!ui.flip.invest, mode: f === 'b' ? 'balance' : 'sum', itemLabel: 'חשבון',
+    items, months, flip: monthsAsRows('invest'), mode: f === 'b' ? 'balance' : 'sum', itemLabel: 'חשבון',
     get: (m, id) => invCell(m, id)?.[f],
     carryBefore: (id, m0) => lastBal(id, shiftMonth(m0, -1))?.v ?? null,
     monthActive: invDepMonth,
@@ -70,7 +70,7 @@ function renderInvest() {
     ui.invMode = b.dataset.f; saveUi(); renderView('invest');
   };
   el.querySelector('[data-a="add"]').onclick = () => openAccount(null);
-  el.querySelector('[data-a="flip"]').onclick = () => { ui.flip.invest = !ui.flip.invest; saveUi(); renderView('invest'); };
+  el.querySelector('[data-a="flip"]').onclick = () => { ui.flip.invest = !monthsAsRows('invest'); saveUi(); renderView('invest'); };
   el.querySelector('[data-a="xlout"]').onclick = exportExcel;
   el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
   el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openAccount(b.dataset.edit));

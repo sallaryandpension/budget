@@ -61,6 +61,14 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <h3>📲 התקנה כאפליקציה</h3>
+      ${isInstalled()
+        ? '<p class="muted">✓ האפליקציה מותקנת ופתוחה כרגע כאפליקציה.</p>'
+        : `<p class="muted">אפשר להתקין את האתר כאפליקציה: במחשב היא נפתחת בחלון משלה, עם אייקון בתפריט התחל ובשורת המשימות. בטלפון היא מופיעה במסך הבית. הנתונים זהים, כי כולם מסונכרנים ל-GitHub.</p>
+           <button type="button" class="btn" id="instNow">📲 התקנה</button>`}
+    </section>
+
+    <section class="card">
       <h3>🗑 איפוס</h3>
       <p class="muted">מוחק את כל הדוחות והנתונים${cfg ? ' (גם בקובץ ב-GitHub, שם הגרסאות הקודמות נשארות בהיסטוריה)' : ''}.</p>
       <button type="button" class="btn danger" id="resetAll">מחיקת כל הנתונים</button>
@@ -107,6 +115,7 @@ function renderSettings() {
     const ok = await confirmBox('שחזור מגיבוי', `<p>הקובץ מכיל ${n.expenses.cats.length} קטגוריות הוצאה, ${n.income.cats.length} קטגוריות הכנסה ו-${n.invest.accs.length} חשבונות השקעה.</p><p><b>כל הנתונים הנוכחיים יוחלפו בתוכן הקובץ.</b></p>`, 'שחזור', true);
     if (ok) { change({ t: 'replace', data: n }); toast('הנתונים שוחזרו'); }
   };
+  if ($('#instNow')) $('#instNow').onclick = installApp;
   $('#xlOut').onclick = exportExcel;
   $('#xlIn').onclick = pickExcelFile;
   $('#resetAll').onclick = async () => {

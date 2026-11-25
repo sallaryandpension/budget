@@ -184,6 +184,13 @@ function mountGrid(root, spec) {
     if (th && corner) wrap.scrollLeft += th.getBoundingClientRect().right - corner.getBoundingClientRect().left;
     else wrap.scrollLeft = -wrap.scrollWidth;
   }
+  // Months as rows: scroll down so the current month (or the last one) sits just above the totals.
+  if (wrap && spec.flip && wrap.scrollHeight > wrap.clientHeight) {
+    const tr = table.querySelector('tbody tr.cur') || table.querySelector('tbody tr:last-child');
+    const foot = table.tFoot ? table.tFoot.getBoundingClientRect().height : 0;
+    const below = tr ? tr.getBoundingClientRect().bottom - (wrap.getBoundingClientRect().bottom - foot) : 0;
+    if (below > 0) wrap.scrollTop += below + 4;
+  }
 }
 
 /* ---------- Expenses / income report page ---------- */
@@ -193,7 +200,7 @@ function reportSpec(r) {
     .filter(c => c.active !== false || months.some(m => isNum(data[r].vals[m]?.[c.id])))
     .map(c => ({ id: c.id, name: c.name, inactive: c.active === false }));
   return {
-    items, months, flip: !!ui.flip[r], mode: 'sum', itemLabel: 'קטגוריה',
+    items, months, flip: monthsAsRows(r), mode: 'sum', itemLabel: 'קטגוריה',
     get: (m, id) => data[r].vals[m]?.[id],
     monthActive: m => monthHasData(r, m),
     commit: list => change({ t: 'cells', r, list }, { render: false }),
@@ -227,7 +234,7 @@ function renderReport(r) {
   bindYearBar(el, r);
   mountGrid(el, spec);
   el.querySelector('[data-a="cats"]').onclick = () => openCatManager(r);
-  el.querySelector('[data-a="flip"]').onclick = () => { ui.flip[r] = !ui.flip[r]; saveUi(); renderView(r); };
+  el.querySelector('[data-a="flip"]').onclick = () => { ui.flip[r] = !monthsAsRows(r); saveUi(); renderView(r); };
   el.querySelector('[data-a="xlout"]').onclick = exportExcel;
   el.querySelector('[data-a="xlin"]').onclick = pickExcelFile;
 }

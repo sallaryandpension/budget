@@ -1,6 +1,8 @@
 {
+  "id": "./",
   "name": "התקציב שלי",
   "short_name": "תקציב",
+  "description": "דו״ח הוצאות, הכנסות והשקעות",
   "lang": "he",
   "dir": "rtl",
   "start_url": "./",
@@ -8,8 +10,14 @@
   "display": "standalone",
   "background_color": "#f5f3ee",
   "theme_color": "#2f6f5e",
+  "categories": ["finance", "productivity"],
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "הוצאות", "url": "./#expenses", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "הכנסות", "url": "./#income", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "השקעות", "url": "./#invest", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
   ]
 }

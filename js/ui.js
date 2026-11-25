@@ -66,6 +66,9 @@ function downloadFile(name, content, type) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 
+/* Table layout: months as rows and categories as columns unless the user switched it (⇄). */
+const monthsAsRows = kind => ui.flip[kind] !== false;
+
 /* ---------- Year bar (shared by the three reports) ---------- */
 function currentYearOf(kind) {
   const ys = yearsList(), y = ui.year[kind];
