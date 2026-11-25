@@ -247,7 +247,8 @@ table.stat { width: 100%; border-collapse: collapse; font-size: 14px; }
 .fc-set { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; }
 .fc-set label { margin-top: 0; }
 .fc-set select, .fc-set input { width: auto; min-width: 120px; }
-.fc-set .unit input { width: 100px; min-width: 0; }
+.fc-set .unit { display: inline-block; }
+.fc-set .unit input { width: 110px; min-width: 0; }
 .fc-note { margin: -4px 2px 14px; font-size: 14px; }
 .fc-table td { vertical-align: middle; }
 .fc-table .unit { width: 130px; }
@@ -257,6 +258,8 @@ table.stat { width: 100%; border-collapse: collapse; font-size: 14px; }
 .fc-assume { margin-bottom: 20px; }
 .pagehead .fc-mode { margin-inline-start: auto; }
 .fc-sub { margin: -4px 0 12px; }
+.fc-spend .chips.small { margin: 6px 0 2px; }
+.fc-spend small { display: block; }
 .fc-scen { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 12px; border-top: 1px solid var(--line2); }
 .fc-scen small { flex-basis: 100%; }
 .fc-scen .seg button { font-size: 13.5px; padding: 6px 11px; }

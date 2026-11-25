@@ -14,7 +14,8 @@
    No tax is applied. This is an estimate for planning, not advice.
    ===================================================================== */
 
-const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all' };
+const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all', lastAge: 95 };
+const SPEND_STEPS = [0, 10, 20, 30, 50];                    // quick "spend more than today" buttons, % above the average
 /* Which deposits go on: those from the salary depend on the employer (pension, study fund), the
    personal ones depend on the person (broker, bank). Each account says where its deposits come from. */
 const SCEN = { all: 'הכול ממשיך', payroll: 'רק הפקדות מהמשכורת', personal: 'רק הפקדות אישיות', none: 'בלי הפקדות' };
@@ -81,8 +82,10 @@ function fcRows(S, years) {
 
 /* Mode 2: stop working k years from now. Real terms (today's shekels), yearly steps.
    Liquid money pays the spending until the pension age; there the annuity money becomes a monthly
-   pension (balance ÷ coefficient). Rule check at the pension age: liquid × rate ≥ what the pension
-   does not cover. The simulation goes on to 95 to show whether the money actually lasts. */
+   pension (balance ÷ coefficient). Retiring at k is possible when all three hold:
+     1. the liquid money lasts until the pension age (the bridge),
+     2. the rule at the pension age: liquid × rate ≥ what the pension does not cover,
+     3. the money does not run out before the age it has to last to (S.lastAge, default 95). */
 function firePlan(rows, S, age, H, k) {
   const dR = y => Math.pow(1 + S.infl / 100, y);
   const liq = rows.filter(x => !isAnnuity(x.a) && !isHome(x.a)), ann = rows.filter(x => isAnnuity(x.a));
@@ -97,6 +100,7 @@ function firePlan(rows, S, age, H, k) {
     const ageY = age + y;
     if (!converted && ageY >= P) { annuity = sum(pen) / S.coef; pen = pen.map(() => 0); converted = true; LatP = L; }
     path.push({ y, L, pen: sum(pen) });
+    if (y === H) break;                                       // the money has to last until this age, not through it
     L = L * (1 + rl) - (annual - 12 * annuity);
     pen = pen.map((p, i) => p * (1 + realRate(ann[i].a, S.infl)));
     if (L < 0 && runOut === null) { runOut = ageY + 1; if (!converted) bridgeOk = false; }
@@ -104,7 +108,8 @@ function firePlan(rows, S, age, H, k) {
   if (LatP === null) LatP = L;
   const needAfter = Math.max(0, annual - 12 * annuity);
   const ruleOk = bridgeOk && LatP >= 0 && (needAfter === 0 || LatP * swr >= needAfter);
-  return { k, age: age + k, Lret, rl, annuity, LatP, needAfter, bridgeOk, ruleOk, runOut, path };
+  const lasts = runOut === null;                              // H ends at the age the money has to last to
+  return { k, age: age + k, Lret, rl, annuity, LatP, needAfter, bridgeOk, ruleOk, lasts, ok: ruleOk && lasts, runOut, path };
 }
 
 function renderForecast() {
@@ -126,7 +131,7 @@ function renderForecast() {
   S.spendNow = isNum(S.spend) ? S.spend : avgSpend;
 
   const H = mode === 'years' ? (S.years === 'ret' ? (toRet || 20) : S.years)
-    : mode === 'goal' ? 60 : (isNum(age) ? Math.max(1, 95 - age) : 1);
+    : mode === 'goal' ? 60 : (isNum(age) ? Math.max(1, S.lastAge - age) : 1);
   const rows = fcRows(S, H);
   const missingBal = rows.filter(x => !x.hasBal), missingRet = rows.filter(x => !isNum(x.ret));
   const today = sum(rows.map(x => x.start));
@@ -151,10 +156,15 @@ function renderForecast() {
   if (mode === 'years') fields = `<div><label for="fcYears">כמה שנים קדימה</label><select id="fcYears">${yOpts.map(v => `<option value="${v}" ${S.years === v ? 'selected' : ''}>${v} שנים</option>`).join('')}
       <option value="ret" ${S.years === 'ret' ? 'selected' : ''} ${isNum(age) ? '' : 'disabled'}>עד גיל ${S.retAge}${isNum(toRet) ? ` (${toRet} שנים)` : ' (צריך שנת לידה)'}</option></select></div>${fInfl}${fReal}${fBirth}${fRet}`;
   else if (mode === 'goal') fields = `<div><label for="fcGoal">היעד</label><div class="unit"><input id="fcGoal" type="text" inputmode="decimal" value="${cellText(S.goal)}"><span>₪</span></div></div>${fInfl}${fReal}${fBirth}${fRet}`;
-  else fields = `<div><label for="fcSpend">הוצאה חודשית בפרישה</label><div class="unit"><input id="fcSpend" type="text" inputmode="decimal" value="${isNum(S.spend) ? cellText(S.spend) : ''}" placeholder="${NF0.format(Math.round(avgSpend))}"><span>₪</span></div>
-      <small class="muted">${isNum(S.spend) ? `ממוצע ההוצאות: ${money(avgSpend)}` : 'ריק = ממוצע ההוצאות ב-12 החודשים האחרונים'}</small></div>
+  else {
+    const stepOn = p => p === 0 ? !isNum(S.spend) : isNum(S.spend) && avgSpend > 0 && Math.round(avgSpend * (1 + p / 100)) === Math.round(S.spend);
+    fields = `<div class="fc-spend"><label for="fcSpend">הוצאה חודשית בפרישה</label><div class="unit"><input id="fcSpend" type="text" inputmode="decimal" value="${S.spendNow > 0 ? NF0.format(Math.round(S.spendNow)) : ''}" placeholder="למשל 12,000"><span>₪</span></div>
+      ${avgSpend > 0 ? `<div class="chips small" id="fcSpendSteps">${SPEND_STEPS.map(p => `<button type="button" class="chip${stepOn(p) ? ' on' : ''}" data-p="${p}">${p ? `+${p}%` : 'ממוצע'}</button>`).join('')}</div>
+      <small class="muted">ממוצע ההוצאות ב-12 החודשים האחרונים: ${money(avgSpend)}${isNum(S.spend) ? '' : ' (ברירת המחדל)'}</small>` : '<small class="muted">אין עדיין הוצאות בדו״ח, אז צריך להזין סכום.</small>'}</div>
     <div><label for="fcSwr">כלל משיכה</label><select id="fcSwr">${[3, 3.5, 4, 4.5, 5].map(v => `<option value="${v}" ${S.swr === v ? 'selected' : ''}>חוק ה-${PF1.format(v)}%</option>`).join('')}</select></div>
+    <div><label for="fcLast">הכסף צריך להחזיק עד גיל</label><input id="fcLast" type="text" inputmode="numeric" maxlength="3" value="${S.lastAge}"></div>
     ${fBirth}${fRet}${fInfl}`;
+  }
 
   let body = '';
   // ---------- mode 1a: value in N years ----------
@@ -244,9 +254,9 @@ function renderForecast() {
     else if (!(S.spendNow > 0)) body = `<div class="card empty">צריך הוצאה חודשית בפרישה: מזינים אותה למעלה, או ממלאים את דו״ח ההוצאות.</div>`;
     else {
       const P = S.retAge;
-      const kMax = Math.min(H, Math.max(0, P - age) + 13);
+      const kMax = Math.min(H - 1, Math.max(0, P - age) + 13);
       let best = null;
-      for (let k = 0; k <= kMax; k++) { const p = firePlan(rows, S, age, H, k); if (p.ruleOk) { best = p; break; } }
+      for (let k = 0; k <= kMax; k++) { const p = firePlan(rows, S, age, H, k); if (p.ok) { best = p; break; } }
       const fireNum = 12 * S.spendNow / (S.swr / 100);
       const hasAnn = rows.some(x => isAnnuity(x.a));
       const show = best || firePlan(rows, S, age, H, kMax);
@@ -255,8 +265,8 @@ function renderForecast() {
           <p class="fire-story">אפשר להפסיק לעבוד בגיל <b>${best.age}</b> (שנת ${nowY + best.k})${best.k === 0 ? ', כלומר כבר עכשיו' : ''}.
           ${bridgeYears ? `מגיל ${best.age} עד ${P} (${bridgeYears} שנים) חיים מהחסכונות הנזילים: <b class="n">${money(best.Lret)}</b> ביום הפרישה.` : ''}
           ${hasAnn ? `מגיל ${P} הקצבה המשוערת היא <b class="n">${money(best.annuity)}</b> לחודש` : `אין כספי פנסיה בחישוב`}${best.needAfter > 0 ? `, ואת ${money(best.needAfter / 12)} החסרים לחודש מושכים מהחסכונות: בגיל ${P} נשארים בהם <b class="n">${money(best.LatP)}</b>, ו-${PF1.format(S.swr)}% מהם בשנה הם ${money(best.LatP * S.swr / 100 / 12)} לחודש.` : ', והיא מכסה את כל ההוצאה.'}</p>
-          ${best.runOut ? `<p class="warn-line">⚠️ לפי ההנחות, החסכונות הנזילים נגמרים בגיל ${best.runOut}. חוק ה-${PF1.format(S.swr)}% מתקיים בגיל ${P}, אבל כדאי מרווח ביטחון.</p>` : `<p class="muted">לפי ההנחות, הכסף מחזיק עד גיל 95 לפחות.</p>`}`
-        : `<p class="warn-line">⚠️ לפי ההנחות, גם בגיל ${show.age} עוד אי אפשר לפרוש עם הוצאה של ${money(S.spendNow)} לחודש בחוק ה-${PF1.format(S.swr)}%. אפשר להוריד את ההוצאה, להגדיל הפקדות או לבחור כלל משיכה אחר.</p>`;
+          <p class="muted">לפי ההנחות, הכסף מחזיק לפחות עד גיל ${S.lastAge}, ${S.lastAge - best.age} שנים אחרי הפרישה.</p>`
+        : `<p class="warn-line">⚠️ לפי ההנחות, גם בגיל ${show.age} עוד אי אפשר לפרוש עם הוצאה של ${money(S.spendNow)} לחודש, בחוק ה-${PF1.format(S.swr)}% ועם כסף שמחזיק עד גיל ${S.lastAge}. אפשר להוריד את ההוצאה, להגדיל הפקדות, לבחור כלל משיכה אחר או גיל יעד נמוך יותר.</p>`;
       // candidate ages table
       const ages = [...new Set([best ? best.age - 3 : null, best ? best.age - 1 : null, best?.age, 50, 55, 60, 62, 65, P].filter(v => isNum(v) && v >= age && v <= age + kMax))].sort((a, b) => a - b);
       const cand = ages.map(a => firePlan(rows, S, age, H, a - age));
@@ -270,9 +280,9 @@ function renderForecast() {
         <section class="card">${sumLine}
           ${rows.some(x => isHome(x.a)) ? `<p class="hint">🏠 דירה למגורים לא נספרת כאן, כי עדיין צריך איפה לגור. נדל״ן להשקעה נספר כנכס שאפשר לממש. את סוג הנכס משנים בעריכת החשבון.</p>` : ''}</section>
         <section class="card"><h3>החסכונות לאורך החיים <small class="muted">בשקלים של היום</small></h3><div id="fcFire" class="ch"></div><div id="fcFireX"></div></section>
-        <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>הכסף נגמר</th></tr></thead><tbody>
+        <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>מחזיק עד גיל ${S.lastAge}?</th></tr></thead><tbody>
           ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret)}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
-            <td class="n">${c.bridgeOk ? moneyHtml(c.LatP) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.runOut ? `בגיל ${c.runOut}` : 'לא עד 95'}</td></tr>`).join('')}
+            <td class="n">${c.bridgeOk ? moneyHtml(c.LatP) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.lasts ? '✓ כן' : `✗ נגמר בגיל ${c.runOut}`}</td></tr>`).join('')}
           </tbody></table></div></section>`;
       el._draw = () => {
         const labels = [], titles = [], liqV = [], penV = [];
@@ -333,6 +343,11 @@ function renderForecast() {
   num('#fcGoal', (s, v) => { if (isNum(v) && v > 0) saveFc({ goal: v }); else { toast('יעד לא תקין'); renderForecast(); } });
   num('#fcSpend', (s, v) => { if (s === '') saveFc({ spend: null }); else if (isNum(v) && v > 0) saveFc({ spend: v }); else { toast('הוצאה לא תקינה'); renderForecast(); } });
   if ($('#fcSwr')) $('#fcSwr').onchange = e => saveFc({ swr: +e.target.value });
+  if ($('#fcSpendSteps')) $('#fcSpendSteps').onclick = e => {
+    const b = e.target.closest('[data-p]'); if (!b) return;
+    const p = +b.dataset.p; saveFc({ spend: p === 0 ? null : Math.round(avgSpend * (1 + p / 100)) });
+  };
+  num('#fcLast', s => { const n = +s; if (n >= (isNum(age) ? age + 2 : 60) && n <= 120) saveFc({ lastAge: n }); else { toast('גיל לא תקין'); renderForecast(); } });
   if ($('#fcReal')) $('#fcReal').onclick = e => { const b = e.target.closest('[data-r]'); if (b) saveFc({ real: b.dataset.r === '1' }); };
   num('#fcBirth', s => { const n = +s; if (!s) saveFc({ birth: null, years: S.years === 'ret' ? 20 : S.years }); else if (n > 1920 && n <= nowY) saveFc({ birth: n }); else { toast('שנת לידה לא תקינה'); renderForecast(); } });
   num('#fcRet', s => { const n = +s; if (n >= 50 && n <= 80) saveFc({ retAge: n }); else { toast('גיל לא תקין'); renderForecast(); } });
