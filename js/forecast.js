@@ -87,31 +87,47 @@ function fcRows(S, years) {
    pension (balance ÷ coefficient). Retiring at k is possible when all three hold:
      1. the liquid money lasts until the pension age (the bridge),
      2. the rule at the pension age: liquid × rate ≥ what the pension does not cover,
-     3. the money does not run out before the age it has to last to (S.lastAge, default 95). */
+     3. the money does not run out before the age it has to last to (S.lastAge, default 95).
+   Every account is followed on its own: liquid accounts grow at their own rate and the spending is
+   taken from them in proportion to their size; the home and real estate that is not sold keep
+   growing and are never touched; annuity money grows until it becomes the pension. */
 function firePlan(rows, S, age, H, k) {
   const dR = y => Math.pow(1 + S.infl / 100, y);
   const liq = rows.filter(x => livesOn(x.a, S)), ann = rows.filter(x => isAnnuity(x.a));
+  const keep = rows.filter(x => !livesOn(x.a, S) && !isAnnuity(x.a));
   const annual = 12 * S.spendNow, P = S.retAge, swr = S.swr / 100, sc = S.depScen;
-  let L = sum(liq.map(x => yv(x, k, sc))) / dR(k);
-  const Lret = L;
-  const rl = L > 0 ? sum(liq.map(x => yv(x, k, sc) / dR(k) * realRate(x.a, S.infl))) / L : 0;
-  let pen = ann.map(x => yv(x, k, sc) / dR(k));
-  let annuity = 0, converted = false, LatP = null, bridgeOk = true, runOut = null;
+  const at = x => yv(x, k, sc) / dR(k);
+  let Li = liq.map(at), pen = ann.map(at), kv = keep.map(at);
+  const Lret = sum(Li);
+  let annuity = 0, converted = false, LatP = null, penAtP = null, bridgeOk = true, runOut = null;
   const path = [];
   for (let y = k; y <= H; y++) {
     const ageY = age + y;
-    if (!converted && ageY >= P) { annuity = sum(pen) / S.coef; pen = pen.map(() => 0); converted = true; LatP = L; }
-    path.push({ y, L, pen: sum(pen) });
+    if (!converted && ageY >= P) { penAtP = pen.slice(); annuity = sum(pen) / S.coef; pen = pen.map(() => 0); converted = true; LatP = sum(Li); }
+    path.push({ y, L: sum(Li), Li: Li.slice(), pen: sum(pen), penI: pen.slice(), keep: kv.slice() });
     if (y === H) break;                                       // the money has to last until this age, not through it
-    L = L * (1 + rl) - (annual - 12 * annuity);
+    Li = Li.map((v, i) => v * (1 + realRate(liq[i].a, S.infl)));
+    const before = sum(Li), after = before - (annual - 12 * annuity);
+    if (before > 0) Li = Li.map(v => v / before * after);     // the spending comes out in proportion to each account
+    else if (Li.length) Li[0] += after - before;
     pen = pen.map((p, i) => p * (1 + realRate(ann[i].a, S.infl)));
-    if (L < 0 && runOut === null) { runOut = ageY + 1; if (!converted) bridgeOk = false; }
+    kv = kv.map((v, i) => v * (1 + realRate(keep[i].a, S.infl)));
+    if (after < 0 && runOut === null) { runOut = ageY + 1; if (!converted) bridgeOk = false; }
   }
-  if (LatP === null) LatP = L;
+  if (LatP === null) LatP = sum(Li);
   const needAfter = Math.max(0, annual - 12 * annuity);
   const ruleOk = bridgeOk && LatP >= 0 && (needAfter === 0 || LatP * swr >= needAfter);
   const lasts = runOut === null;                              // H ends at the age the money has to last to
-  return { k, age: age + k, Lret, rl, annuity, LatP, needAfter, bridgeOk, ruleOk, lasts, ok: ruleOk && lasts, runOut, path };
+  return { k, age: age + k, Lret, annuity, LatP, penAtP, needAfter, bridgeOk, ruleOk, lasts, ok: ruleOk && lasts, runOut, path, liq, ann, keep };
+}
+/* An account's value in year y of a plan (today's shekels); for annuity money after the pension age: null. */
+function planValue(plan, x, y, S) {
+  if (y < plan.k) return yv(x, y, S.depScen) / Math.pow(1 + S.infl / 100, y);
+  const p = plan.path[y - plan.k]; if (!p) return null;
+  let i = plan.liq.indexOf(x); if (i >= 0) return p.Li[i];
+  i = plan.keep.indexOf(x); if (i >= 0) return p.keep[i];
+  i = plan.ann.indexOf(x); if (i >= 0) return plan.age + (y - plan.k) >= S.retAge ? null : p.penI[i];
+  return null;
 }
 
 function renderForecast() {
@@ -295,7 +311,38 @@ function renderForecast() {
         <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>מחזיק עד גיל ${S.lastAge}?</th></tr></thead><tbody>
           ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret * fy(c.k))}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
             <td class="n">${c.bridgeOk ? moneyHtml(c.LatP * fy(kP)) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.lasts ? '✓ כן' : `✗ נגמר בגיל ${c.runOut}`}</td></tr>`).join('')}
-          </tbody></table></div></section>`;
+          </tbody></table></div></section>
+        ${itemsTable()}`;
+      // Every item (the home included) today, at retirement, at the pension age and at the last age.
+      function itemsTable() {
+        const cols = [{ y: 0, t: `היום (גיל ${age})` }, { y: show.k, t: `בפרישה (גיל ${show.age})` }];
+        if (kP > show.k && kP < H) cols.push({ y: kP, t: `בגיל הקצבה (${P})`, pension: true });
+        cols.push({ y: H, t: `בגיל ${S.lastAge}` });
+        const uniq = cols.filter((c, i) => cols.findIndex(d => d.y === c.y) === i);
+        const role = x => isAnnuity(x.a) ? 'קצבה' : isHome(x.a) ? 'דירת מגורים' : x.a.type === 'realestate' && !S.sellRE ? 'לא נמכר' : 'נזיל';
+        const cell = (x, c) => {
+          const ia = show.ann.indexOf(x);
+          if (ia >= 0 && show.penAtP && (c.pension || (c.y >= show.k && age + c.y >= P))) {
+            const bal = show.penAtP[ia] * fy(kP), ann = bal / S.coef;
+            return c.pension ? `${moneyHtml(bal)}<small class="muted d">← קצבה ${money(ann)} לחודש</small>` : `<span class="muted">קצבה ${money(ann)} לחודש</span>`;
+          }
+          const v = planValue(show, x, c.y, S);
+          return isNum(v) ? moneyHtml(Math.max(0, v) * fy(c.y)) : '—';
+        };
+        const total = (c, f = () => true) => sum(rows.filter(f).map(x => {
+          if (show.ann.includes(x) && age + c.y >= P && !c.pension) return 0;
+          if (show.ann.includes(x) && c.pension && show.penAtP) return show.penAtP[show.ann.indexOf(x)];
+          return Math.max(0, planValue(show, x, c.y, S) || 0);
+        })) * fy(c.y);
+        return `<section class="card"><h3>כמה שווה כל פריט <small class="muted">${S.fireNominal ? 'בשקלים של כל שנה' : 'במחירי היום'}, אם פורשים בגיל ${show.age}</small></h3>
+          <div class="tablewrap"><table class="stat items"><thead><tr><th>פריט</th>${uniq.map(c => `<th class="n">${c.t}</th>`).join('')}</tr></thead><tbody>
+          ${rows.map(x => `<tr><td>${typeDot(x.a.type)}${esc(x.a.name)} <small class="muted">${role(x)}</small></td>${uniq.map(c => `<td class="n">${cell(x, c)}</td>`).join('')}</tr>`).join('')}
+          </tbody><tfoot>
+            <tr><td>סה״כ</td>${uniq.map(c => `<td class="n">${moneyHtml(total(c))}</td>`).join('')}</tr>
+            <tr class="sub"><td>מזה זמין למחיה</td>${uniq.map(c => `<td class="n">${moneyHtml(total(c, x => show.liq.includes(x)))}</td>`).join('')}</tr>
+          </tfoot></table></div>
+          <p class="hint">״נזיל״ = הכסף שממנו חיים אחרי הפרישה; ההוצאה יורדת מכל חשבון לפי גודלו. ״דירת מגורים״ ו״לא נמכר״ ממשיכים לעלות בערך ולא נוגעים בהם. כספי ״קצבה״ הופכים בגיל ${P} לקצבה חודשית, ולכן אחרי הגיל הזה הם לא נספרים בסה״כ.</p></section>`;
+      }
       el._draw = () => {
         const labels = [], titles = [], liqV = [], penV = [];
         for (let y = 0; y <= H; y++) {
