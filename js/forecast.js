@@ -14,7 +14,7 @@
    No tax is applied. This is an estimate for planning, not advice.
    ===================================================================== */
 
-const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all', lastAge: 95, sellRE: false };
+const FC_DEFAULTS = { mode: 'years', years: 20, infl: 2.5, real: true, birth: null, retAge: 67, dep: {}, goal: 2000000, spend: null, swr: 4, coef: 200, depScen: 'all', lastAge: 95, sellRE: false, fireNominal: false };
 const SPEND_STEPS = [0, 10, 20, 30, 50];                    // quick "spend more than today" buttons, % above the average
 /* Which deposits go on: those from the salary depend on the employer (pension, study fund), the
    personal ones depend on the person (broker, bank). Each account says where its deposits come from. */
@@ -167,7 +167,9 @@ function renderForecast() {
     <div><label for="fcLast">הכסף צריך להחזיק עד גיל</label><input id="fcLast" type="text" inputmode="numeric" maxlength="3" value="${S.lastAge}"></div>
     ${fBirth}${fRet}${fInfl}
     <div><label>נדל״ן</label><div class="seg" id="fcSellRE"><button type="button" data-v="0" class="${S.sellRE ? '' : 'on'}">בלי למכור נדל״ן</button><button type="button" data-v="1" class="${S.sellRE ? 'on' : ''}">מוכרים נדל״ן להשקעה</button></div>
-      <small class="muted">דירת המגורים לא נמכרת אף פעם.</small></div>`;
+      <small class="muted">דירת המגורים לא נמכרת אף פעם.</small></div>
+    <div><label>סכומים</label><div class="seg" id="fcFireNom"><button type="button" data-v="0" class="${S.fireNominal ? '' : 'on'}">במחירי היום</button><button type="button" data-v="1" class="${S.fireNominal ? 'on' : ''}">במחירי העתיד</button></div>
+      <small class="muted">החישוב תמיד במחירי היום. ״במחירי העתיד״ רק מוסיף אינפלציה לכל סכום לפי השנה שלו.</small></div>`;
   }
 
   let body = '';
@@ -262,13 +264,17 @@ function renderForecast() {
       let best = null;
       for (let k = 0; k <= kMax; k++) { const p = firePlan(rows, S, age, H, k); if (p.ok) { best = p; break; } }
       const fireNum = 12 * S.spendNow / (S.swr / 100);
+      // The plan is computed in today's prices. "Prices at the time" only adds inflation to each amount for its own year.
+      const fy = y => S.fireNominal ? Math.pow(1 + S.infl / 100, y) : 1, kP = P - age;
+      const priceTxt = y => S.fireNominal ? `בשקלים של שנת ${nowY + y}` : 'בשקלים של היום';
       const hasAnn = rows.some(x => isAnnuity(x.a));
       const show = best || firePlan(rows, S, age, H, kMax);
       const bridgeYears = Math.max(0, P - show.age);
       const sumLine = best ? `
           <p class="fire-story">אפשר להפסיק לעבוד בגיל <b>${best.age}</b> (שנת ${nowY + best.k})${best.k === 0 ? ', כלומר כבר עכשיו' : ''}.
-          ${bridgeYears ? `מגיל ${best.age} עד ${P} (${bridgeYears} שנים) חיים מהחסכונות הנזילים: <b class="n">${money(best.Lret)}</b> ביום הפרישה.` : ''}
-          ${hasAnn ? `מגיל ${P} הקצבה המשוערת היא <b class="n">${money(best.annuity)}</b> לחודש` : `אין כספי פנסיה בחישוב`}${best.needAfter > 0 ? `, ואת ${money(best.needAfter / 12)} החסרים לחודש מושכים מהחסכונות: בגיל ${P} נשארים בהם <b class="n">${money(best.LatP)}</b>, ו-${PF1.format(S.swr)}% מהם בשנה הם ${money(best.LatP * S.swr / 100 / 12)} לחודש.` : ', והיא מכסה את כל ההוצאה.'}</p>
+          ${bridgeYears ? `מגיל ${best.age} עד ${P} (${bridgeYears} שנים) חיים מהחסכונות הנזילים: <b class="n">${money(best.Lret * fy(best.k))}</b> ביום הפרישה.` : ''}
+          ${hasAnn ? `מגיל ${P} הקצבה המשוערת היא <b class="n">${money(best.annuity * fy(kP))}</b> לחודש` : `אין כספי פנסיה בחישוב`}${best.needAfter > 0 ? `, ואת ${money(best.needAfter / 12 * fy(kP))} החסרים לחודש מושכים מהחסכונות: בגיל ${P} נשארים בהם <b class="n">${money(best.LatP * fy(kP))}</b>, ו-${PF1.format(S.swr)}% מהם בשנה הם ${money(best.LatP * S.swr / 100 / 12 * fy(kP))} לחודש.` : ', והיא מכסה את כל ההוצאה.'}</p>
+          <p class="muted">${S.fireNominal ? `הסכומים בשקלים של השנה שבה הם קורים, כלומר כולל אינפלציה של ${PF1.format(S.infl)}% בשנה. ההחלטה עצמה זהה, כי החישוב נעשה במחירי היום.` :'כל הסכומים <b>במחירי היום</b>: ההוצאה, היתרות והקצבה מנוכים מאינפלציה, כך שאפשר להשוות אותם ישירות למה שאתה מוציא היום.'}</p>
           <p class="muted">לפי ההנחות, הכסף מחזיק לפחות עד גיל ${S.lastAge}, ${S.lastAge - best.age} שנים אחרי הפרישה.</p>`
         : `<p class="warn-line">⚠️ לפי ההנחות, גם בגיל ${show.age} עוד אי אפשר לפרוש עם הוצאה של ${money(S.spendNow)} לחודש, בחוק ה-${PF1.format(S.swr)}% ועם כסף שמחזיק עד גיל ${S.lastAge}. אפשר להוריד את ההוצאה, להגדיל הפקדות, לבחור כלל משיכה אחר או גיל יעד נמוך יותר.</p>`;
       // candidate ages table
@@ -277,29 +283,29 @@ function renderForecast() {
       body = `
         <div class="kpis">
           <div class="kpi fa"><div class="k-l">אפשר להפסיק לעבוד</div><div class="k-v">${best ? `בגיל ${best.age}` : '—'}</div><div class="k-s">${best ? `שנת ${nowY + best.k}, בעוד ${best.k} שנים` : `לא עד גיל ${show.age}`}</div></div>
-          <div class="kpi an"><div class="k-l">הוצאה חודשית בפרישה</div><div class="k-v">${moneyHtml(S.spendNow)}</div><div class="k-s">בשקלים של היום</div></div>
-          <div class="kpi an"><div class="k-l">היעד לפי חוק ה-${PF1.format(S.swr)}% (בלי פנסיה)</div><div class="k-v">${moneyHtml(fireNum)}</div><div class="k-s">${PF1.format(100 / S.swr)} שנות הוצאה</div></div>
-          <div class="kpi fb"><div class="k-l">קצבה משוערת מגיל ${P}</div><div class="k-v">${hasAnn ? moneyHtml(show.annuity) : '—'}</div><div class="k-s">${hasAnn ? `מקדם ${S.coef}, לפני מס` : 'אין פנסיה בחישוב'}</div></div>
+          <div class="kpi an"><div class="k-l">הוצאה חודשית בפרישה</div><div class="k-v">${moneyHtml(S.spendNow * fy(show.k))}</div><div class="k-s">${priceTxt(show.k)}</div></div>
+          <div class="kpi an"><div class="k-l">היעד לפי חוק ה-${PF1.format(S.swr)}% (בלי פנסיה)</div><div class="k-v">${moneyHtml(fireNum * fy(show.k))}</div><div class="k-s">${PF1.format(100 / S.swr)} שנות הוצאה · ${priceTxt(show.k)}</div></div>
+          <div class="kpi fb"><div class="k-l">קצבה משוערת מגיל ${P}</div><div class="k-v">${hasAnn ? moneyHtml(show.annuity * fy(kP)) : '—'}</div><div class="k-s">${hasAnn ? `מקדם ${S.coef}, לפני מס · ${priceTxt(kP)}` : 'אין פנסיה בחישוב'}</div></div>
         </div>
         <section class="card">${sumLine}
           ${rows.some(x => x.a.type === 'realestate') ? `<p class="hint">🏠 ${S.sellRE
             ? `דירת המגורים לא נמכרת ולא נספרת. נדל״ן להשקעה${rows.some(x => x.a.type === 'realestate' && !isHome(x.a)) ? '' : ' (אין כרגע)'} נספר ככסף שאפשר לחיות ממנו, כאילו מוכרים אותו.`
             : 'בלי למכור נדל״ן: הדירות לא נספרות ככסף לחיות ממנו. אם יש שכר דירה מנכס להשקעה, הוא ימשיך להיכנס, ואפשר להוריד אותו מההוצאה החודשית.'} את סוג הנכס (דירה למגורים או להשקעה) משנים בעריכת החשבון.</p>` : ''}</section>
-        <section class="card"><h3>החסכונות לאורך החיים <small class="muted">בשקלים של היום</small></h3><div id="fcFire" class="ch"></div><div id="fcFireX"></div></section>
+        <section class="card"><h3>החסכונות לאורך החיים <small class="muted">${S.fireNominal ? 'בשקלים של כל שנה' : 'בשקלים של היום'}</small></h3><div id="fcFire" class="ch"></div><div id="fcFireX"></div></section>
         <section class="card"><h3>מה אם פורשים בגיל אחר</h3><div class="tablewrap"><table class="stat"><thead><tr><th>גיל פרישה</th><th class="n">נזיל ביום הפרישה</th><th>מחזיק עד גיל ${P}?</th><th class="n">נשאר בגיל ${P}</th><th>חוק ה-${PF1.format(S.swr)}%</th><th>מחזיק עד גיל ${S.lastAge}?</th></tr></thead><tbody>
-          ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret)}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
-            <td class="n">${c.bridgeOk ? moneyHtml(c.LatP) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.lasts ? '✓ כן' : `✗ נגמר בגיל ${c.runOut}`}</td></tr>`).join('')}
+          ${cand.map(c => `<tr${best && c.age === best.age ? ' class="hl"' : ''}><td>${c.age}</td><td class="n">${moneyHtml(c.Lret * fy(c.k))}</td><td>${c.age >= P ? '—' : c.bridgeOk ? '✓ כן' : '✗ לא'}</td>
+            <td class="n">${c.bridgeOk ? moneyHtml(c.LatP * fy(kP)) : '—'}</td><td>${c.ruleOk ? '✓ מתקיים' : '✗ לא מתקיים'}</td><td>${c.lasts ? '✓ כן' : `✗ נגמר בגיל ${c.runOut}`}</td></tr>`).join('')}
           </tbody></table></div></section>`;
       el._draw = () => {
         const labels = [], titles = [], liqV = [], penV = [];
         for (let y = 0; y <= H; y++) {
           labels.push(String(age + y)); titles.push(`גיל ${age + y} · שנת ${nowY + y}`);
           if (y < show.k) {
-            liqV.push(sum(rows.filter(x => livesOn(x.a, S)).map(x => yv(x, y, sc))) / defl(y));
-            penV.push(sum(rows.filter(x => isAnnuity(x.a)).map(x => yv(x, y, sc))) / defl(y));
+            liqV.push(sum(rows.filter(x => livesOn(x.a, S)).map(x => yv(x, y, sc))) / defl(y) * fy(y));
+            penV.push(sum(rows.filter(x => isAnnuity(x.a)).map(x => yv(x, y, sc))) / defl(y) * fy(y));
           } else {
             const p = show.path[y - show.k];
-            liqV.push(p.L); penV.push(age + y >= P ? null : p.pen);
+            liqV.push(p.L * fy(y)); penV.push(age + y >= P ? null : p.pen * fy(y));
           }
         }
         const series = [{ name: 'חסכונות נזילים', color: 'var(--s1)', values: liqV }];
@@ -349,6 +355,7 @@ function renderForecast() {
   num('#fcGoal', (s, v) => { if (isNum(v) && v > 0) saveFc({ goal: v }); else { toast('יעד לא תקין'); renderForecast(); } });
   num('#fcSpend', (s, v) => { if (s === '') saveFc({ spend: null }); else if (isNum(v) && v > 0) saveFc({ spend: v }); else { toast('הוצאה לא תקינה'); renderForecast(); } });
   if ($('#fcSwr')) $('#fcSwr').onchange = e => saveFc({ swr: +e.target.value });
+  if ($('#fcFireNom')) $('#fcFireNom').onclick = e => { const b = e.target.closest('[data-v]'); if (b && (b.dataset.v === '1') !== S.fireNominal) saveFc({ fireNominal: b.dataset.v === '1' }); };
   if ($('#fcSellRE')) $('#fcSellRE').onclick = e => { const b = e.target.closest('[data-v]'); if (b && (b.dataset.v === '1') !== S.sellRE) saveFc({ sellRE: b.dataset.v === '1' }); };
   if ($('#fcSpendSteps')) $('#fcSpendSteps').onclick = e => {
     const b = e.target.closest('[data-p]'); if (!b) return;
